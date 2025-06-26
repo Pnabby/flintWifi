@@ -1,13 +1,15 @@
-require('dotenv').config({path:'../.env'});
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const app = express();
+const path = require('path');
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static('../public')); // Serve frontend files
+app.use(express.static(path.join(__dirname, 'public')));
+ // Serve frontend files
 
 // Supabase client
 const supabase = createClient(
