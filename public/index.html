@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flint WiFi Plans</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #4361ee;
+            --primary-dark: #3a56d4;
+            --secondary: #3f37c9;
+            --light: #f8f9fa;
+            --dark: #212529;
+            --success: #4cc9f0;
+            --warning: #f8961e;
+            --danger: #f72585;
+            --gray: #adb5bd;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #f5f7ff;
+            color: var(--dark);
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            color: var(--primary);
+            margin-bottom: 1rem;
+            font-weight: 700;
+        }
+        
+        .subtitle {
+            font-size: 1.1rem;
+            color: var(--gray);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .plans-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+        
+        .plan {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .plan:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+        }
+        
+        .plan-header {
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+        
+        .plan-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--dark);
+            margin-bottom: 0.5rem;
+        }
+        
+        .plan-price {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin: 1rem 0;
+        }
+        
+        .plan-price span {
+            font-size: 1rem;
+            font-weight: 400;
+            color: var(--gray);
+        }
+        
+        .plan-features {
+            margin: 2rem 0;
+        }
+        
+        .plan-features li {
+            list-style: none;
+            padding: 0.5rem 0;
+            position: relative;
+            padding-left: 1.5rem;
+        }
+        
+        .plan-features li:before {
+            content: "✓";
+            color: var(--success);
+            position: absolute;
+            left: 0;
+            font-weight: bold;
+        }
+        
+        .btn {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: 500;
+            text-align: center;
+            transition: all 0.3s ease;
+            width: 100%;
+            font-size: 1rem;
+        }
+        
+        .btn:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(67, 97, 238, 0.3);
+        }
+        
+        .btn-secondary {
+            background: white;
+            color: var(--primary);
+            border: 1px solid var(--primary);
+        }
+        
+        .btn-secondary:hover {
+            background: var(--light);
+        }
+        
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            padding: 2.5rem;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            animation: modalFadeIn 0.3s ease;
+        }
+        
+        @keyframes modalFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .modal-header {
+            margin-bottom: 1.5rem;
+        }
+        
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--dark);
+            margin-bottom: 0.5rem;
+        }
+        
+        .modal-description {
+            color: var(--gray);
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: var(--dark);
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 1rem;
+            transition: border 0.3s ease;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        
+        .tag {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: var(--warning);
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        @media (max-width: 768px) {
+            .plans-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                padding: 1.5rem;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Flint WiFi Plans</h1>
+            <p class="subtitle">Stay connected with our affordable and reliable internet packages. Choose the plan that works best for you.</p>
+            <br>
+            <p class="subtitle">For more information, contact 0503405200</p>
+        </header>
+        
+        <div class="plans-container">
+            <div class="plan">
+                <div class="plan-header">
+                    <h2 class="plan-title">Daily Plan</h2>
+                    <div class="plan-price">4 <span>GHS</span></div>
+                </div>
+                <ul class="plan-features">
+                    <li>24-hour unlimited access</li>
+                    <li>High-speed connectivity</li>
+                    <li>Multiple device support</li>
+                    <li>No hidden fees</li>
+                </ul>
+                <button class="btn" onclick="selectPlan('daily')">Get Daily Plan</button>
+            </div>
+            
+            <div class="plan">
+                <div class="plan-header">
+                    <h2 class="plan-title">Weekly Plan</h2>
+                    <div class="plan-price">25 <span>GHS</span></div>
+                </div>
+                <ul class="plan-features">
+                    <li>7-day unlimited access</li>
+                    <li>High-speed connectivity</li>
+                    <li>Multiple device support</li>
+                    <li>Save 10% vs daily plans</li>
+                </ul>
+                <button class="btn" onclick="selectPlan('weekly')">Get Weekly Plan</button>
+            </div>
+            
+            <div class="plan">
+                <div class="plan-header">
+                    <h2 class="plan-title">Monthly Plan</h2>
+                    <div class="plan-price">100 <span>GHS</span></div>
+                </div>
+                <ul class="plan-features">
+                    <li>30-day unlimited access</li>
+                    <li>High-speed connectivity</li>
+                    <li>Multiple device support</li>
+                    <li>Best value - save 15%</li>
+                </ul>
+                <button class="btn" onclick="selectPlan('monthly')">Get Monthly Plan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Email Modal -->
+    <div id="emailModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Enter Your Email</h2>
+                <p class="modal-description">We'll send your payment receipt and WiFi credentials to this address</p>
+            </div>
+            <div class="form-group">
+                <label for="customerEmail">Email Address</label>
+                <input type="email" id="customerEmail" class="form-control" placeholder="your@email.com" required>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn" onclick="processPayment()">Continue to Payment</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Credentials Modal -->
+    <div id="credentialsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Your WiFi Login Details</h2>
+                <p class="modal-description">Here are your access credentials. Please save them securely.</p>
+            </div>
+            <div class="form-group">
+                <label>Username:</label>
+                <p id="displayUsername" style="font-size: 1.2rem; font-weight: 500; padding: 0.8rem; background: #f5f7ff; border-radius: 8px;"></p>
+            </div>
+            <div class="form-group">
+                <label>Password:</label>
+                <p id="displayPassword" style="font-size: 1.2rem; font-weight: 500; padding: 0.8rem; background: #f5f7ff; border-radius: 8px;"></p>
+            </div>
+            <p style="color: var(--gray); font-size: 0.9rem; text-align: center; margin-top: 1.5rem;">
+                Tip: Screenshot or copy this information for later use.
+            </p>
+            <div class="modal-footer" style="justify-content: center;">
+                <button class="btn" onclick="closeCredentialsModal()">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load JavaScript files -->
+    <script src="https://js.paystack.co/v1/inline.js"></script>
+    <script src="scripts/main.js"></script>
+    <script src="scripts/paystack.js"></script>
+</body>
+</html>
