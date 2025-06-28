@@ -39,8 +39,8 @@ app.post('/api/init-payment', async (req, res) => {
   res.json({
     key: process.env.PAYSTACK_PUBLIC_KEY, // Frontend uses this to initialize Paystack
     email,
-    //amount: plan * 100,
-    amount: 0.1 * 100,
+    amount: plan * 100,
+    //amount: 0.1 * 100,
     reference: 'FLINT-' + Math.floor(Math.random() * 1000000000),
     metadata: { plan_type: planType }
   });
