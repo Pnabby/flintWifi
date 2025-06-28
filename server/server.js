@@ -13,6 +13,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+app.get('/credentials.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'credentials.html'));
+});
  // Serve frontend files
 
 // Supabase client
@@ -35,8 +39,8 @@ app.post('/api/init-payment', async (req, res) => {
   res.json({
     key: process.env.PAYSTACK_PUBLIC_KEY, // Frontend uses this to initialize Paystack
     email,
-    amount: plan * 100,
-    //amount: 0.1 * 100,
+    //amount: plan * 100,
+    amount: 0.1 * 100,
     reference: 'FLINT-' + Math.floor(Math.random() * 1000000000),
     metadata: { plan_type: planType }
   });
@@ -84,7 +88,7 @@ app.post('/api/verify-payment', async (req, res) => {
         template_id: process.env.EMAILJS_TEMPLATE_ID,
         user_id: process.env.EMAILJS_PUBLIC_KEY,
         template_params: {
-          email,
+          email: email,
           username: data[0].username,
           password: data[0].password,
           plan: planType
@@ -96,7 +100,11 @@ app.post('/api/verify-payment', async (req, res) => {
       console.error("Email sending failed (but credentials were generated)");
     }
 
-    res.json({ success: true, credentials: data[0] });
+    res.json({ 
+      success: true, 
+      credentials: data[0],
+      redirectUrl: `/credentials.html?username=${encodeURIComponent(data[0].username)}&password=${encodeURIComponent(data[0].password)}`
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });

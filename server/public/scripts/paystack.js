@@ -35,9 +35,14 @@ async function processPayment() {
       .then(result => {
         if (result.success) {
           closeModal();
-          document.getElementById('displayUsername').textContent = result.credentials.username;
-          document.getElementById('displayPassword').textContent = result.credentials.password;
-          document.getElementById('credentialsModal').style.display = 'flex';
+          if (result.redirectUrl) {
+            window.location.href = result.redirectUrl;
+          } else {
+            // Fallback to old modal behavior if redirectUrl isn't available
+            document.getElementById('displayUsername').textContent = result.credentials.username;
+            document.getElementById('displayPassword').textContent = result.credentials.password;
+            document.getElementById('credentialsModal').style.display = 'flex';
+          }
         } else {
           alert('Error: ' + (result.error || "Failed to fetch credentials"));
         }
