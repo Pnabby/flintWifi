@@ -1,7 +1,8 @@
-require('dotenv').config();
+require('dotenv').config({path:'../.env'});
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
+const nodemailer = require('nodemailer');
 const app = express();
 const path = require('path');
 
@@ -25,6 +26,16 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY
 );
 
+const transporter = nodemailer.createTransport({
+  host: 'smtp.sendgrid.net',
+  port: 587,
+  secure: false, // TLS
+  auth: {
+    user: 'apikey', // Literal string 'apikey'
+    pass: process.env.SENDGRID_API_KEY, // Your SendGrid API key
+  },
+});
+
 // API: Initialize Paystack payment
 app.post('/api/init-payment', async (req, res) => {
   const { email, planType } = req.body;
@@ -39,8 +50,8 @@ app.post('/api/init-payment', async (req, res) => {
   res.json({
     key: process.env.PAYSTACK_PUBLIC_KEY, // Frontend uses this to initialize Paystack
     email,
-    amount: plan * 100,
-    //amount: 0.1 * 100,
+    //amount: plan * 100,
+    amount: 0.1 * 100,
     reference: 'FLINT-' + Math.floor(Math.random() * 1000000000),
     metadata: { plan_type: planType }
   });
@@ -79,26 +90,26 @@ app.post('/api/verify-payment', async (req, res) => {
 
     if (error) throw error;
 
-    // Send email via EmailJS (server-side)
-    const emailjsResponse = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service_id: process.env.EMAILJS_SERVICE_ID,
-        template_id: process.env.EMAILJS_TEMPLATE_ID,
-        user_id: process.env.EMAILJS_PUBLIC_KEY,
-        template_params: {
-          email: email,
-          username: data[0].username,
-          password: data[0].password,
-          plan: planType
-        }
-      })
-    });
+    // Send email via Nodemailer
+    // const mailOptions = {
+    //   from: `Flint WiFi <${process.env.EMAIL_FROM}>`, // Sender address
+    //   to: email, // Recipient
+    //   subject: 'Your WiFi Credentials', // Email subject
+    //   html: `
+    //     <h1>Your WiFi Login Details</h1>
+    //     <p>Plan: ${planType}</p>
+    //     <p><strong>Username:</strong> ${data[0].username}</p>
+    //     <p><strong>Password:</strong> ${data[0].password}</p>
+    //     <p>Thank you for choosing Flint WiFi!</p>
+    //   `,
+    // };
 
-    if (!emailjsResponse.ok) {
-      console.error("Email sending failed (but credentials were generated)");
-    }
+    // try {
+    //   await transporter.sendMail(mailOptions);
+    //   console.log('Email sent successfully');
+    // } catch (error) {
+    //   console.log(error)
+    // }
 
     res.json({ 
       success: true, 

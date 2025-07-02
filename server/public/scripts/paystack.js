@@ -7,6 +7,9 @@ async function processPayment() {
   }
 
   try {
+    // Show loading immediately when proceeding to payment
+    document.getElementById('loadingModal').style.display = 'flex';
+
     // 1. Get payment data from backend
     const response = await fetch('/api/init-payment', {
       method: 'POST',
@@ -18,8 +21,10 @@ async function processPayment() {
     });
     const paymentData = await response.json();
 
-    // 2. Define a REGULAR (non-async) callback
     const handlePaymentCallback = function(response) {
+      // Payment window closed - show loading while verifying
+      document.getElementById('loadingModal').style.display = 'flex';
+
       // Use .then() instead of async/await
       fetch('/api/verify-payment', {
         method: 'POST',
@@ -33,6 +38,8 @@ async function processPayment() {
       })
       .then(verification => verification.json())
       .then(result => {
+        // Hide loading when done
+        document.getElementById('loadingModal').style.display = 'none';
         if (result.success) {
           closeModal();
           if (result.redirectUrl) {
@@ -62,11 +69,15 @@ async function processPayment() {
       ref: paymentData.reference,
       metadata: paymentData.metadata,
       callback: handlePaymentCallback, // Sync function
-      onClose: () => console.log('Payment window closed')
+      onClose: function() {
+        // This runs when Paystack window closes without payment
+        document.getElementById('loadingModal').style.display = 'none';
+      }
     });
 
     handler.openIframe();
   } catch (error) {
+    document.getElementById('loadingModal').style.display = 'none';
     console.error('Payment error:', error);
     alert('Payment failed. Please try again.');
   }
