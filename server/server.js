@@ -1,24 +1,24 @@
-require('dotenv').config({path:'../.env'});
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
-const app = express();
 const path = require('path');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args)); // add this line
+const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Serve frontend files
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-
 app.get('/credentials.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'credentials.html'));
 });
- // Serve frontend files
 
 // Supabase client
 const supabase = createClient(
@@ -26,13 +26,12 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY
 );
 
+// Nodemailer transporter using Gmail
 const transporter = nodemailer.createTransport({
-  host: 'smtp.sendgrid.net',
-  port: 587,
-  secure: false, // TLS
+  service: 'gmail',
   auth: {
-    user: 'apikey', // Literal string 'apikey'
-    pass: process.env.SENDGRID_API_KEY, // Your SendGrid API key
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_APP_PASSWORD,
   },
 });
 
@@ -48,10 +47,9 @@ app.post('/api/init-payment', async (req, res) => {
   if (!plan) return res.status(400).json({ error: "Invalid plan" });
 
   res.json({
-    key: process.env.PAYSTACK_PUBLIC_KEY, // Frontend uses this to initialize Paystack
+    key: process.env.PAYSTACK_PUBLIC_KEY,
     email,
     amount: plan * 100,
-    //amount: 0.1 * 100,
     reference: 'FLINT-' + Math.floor(Math.random() * 1000000000),
     metadata: { plan_type: planType }
   });
@@ -62,7 +60,7 @@ app.post('/api/verify-payment', async (req, res) => {
   const { reference, email, planType, amount } = req.body;
 
   try {
-    // Verify with Paystack (server-side)
+    // Verify with Paystack
     const paystackResponse = await fetch(
       `https://api.paystack.co/transaction/verify/${reference}`,
       {
@@ -77,7 +75,7 @@ app.post('/api/verify-payment', async (req, res) => {
       return res.status(400).json({ error: "Payment verification failed" });
     }
 
-    // Fetch WiFi credentials from Supabase
+    // Fetch credentials from Supabase
     const { data, error } = await supabase.rpc(
       'process_transaction_and_delete_login',
       {
@@ -90,37 +88,41 @@ app.post('/api/verify-payment', async (req, res) => {
 
     if (error) throw error;
 
-    // Send email via Nodemailer
-    // const mailOptions = {
-    //   from: `Flint WiFi <${process.env.EMAIL_FROM}>`, // Sender address
-    //   to: email, // Recipient
-    //   subject: 'Your WiFi Credentials', // Email subject
-    //   html: `
-    //     <h1>Your WiFi Login Details</h1>
-    //     <p>Plan: ${planType}</p>
-    //     <p><strong>Username:</strong> ${data[0].username}</p>
-    //     <p><strong>Password:</strong> ${data[0].password}</p>
-    //     <p>Thank you for choosing Flint WiFi!</p>
-    //   `,
-    // };
+    // Send email with credentials
+    const mailOptions = {
+      from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
+      to: email,
+      subject: 'Your WiFi Credentials',
+      html: `
+        <h1>Your WiFi Login Details</h1>
+        <p>Plan: <strong>${planType}</strong></p>
+        <p><strong>Username:</strong> ${data[0].username}</p>
+        <p><strong>Password:</strong> ${data[0].password}</p>
+        <br>
+        <p>Thank you for choosing Flint WiFi!</p>
+      `,
+    };
 
-    // try {
-    //   await transporter.sendMail(mailOptions);
-    //   console.log('Email sent successfully');
-    // } catch (error) {
-    //   console.log(error)
-    // }
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      console.log('✅ Email sent:', info.messageId);
+    } catch (emailError) {
+      console.error('❌ Failed to send email:', emailError);
+      // Still proceed to show credentials
+    }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       credentials: data[0],
       redirectUrl: `/credentials.html?username=${encodeURIComponent(data[0].username)}&password=${encodeURIComponent(data[0].password)}`
     });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
+// Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
