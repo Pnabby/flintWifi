@@ -6,6 +6,19 @@
     <title>Flint WiFi Plans</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        .manual-verify {
+        background: white;
+        padding: 2rem;
+        border-radius: 12px;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }
+
+        #manualVerifyResult {
+        background: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 8px;
+        text-align: left;
+        }
         .loader {
             border: 5px solid #f3f3f3;
             border-top: 5px solid #4361ee;
@@ -386,6 +399,15 @@
             <h2 class="modal-title">Processing Your WiFi Credentials</h2>
             <p class="modal-description">Please wait while we generate your access details...</p>
         </div>
+    </div>
+
+    <div class="manual-verify" style="margin-top: 3rem; text-align: center;">
+        <h3>Having issues?</h3>
+        <p>If you've paid but didn't receive credentials, check your transaction status</p>
+        <button onclick="manualVerify()" class="btn" style="width: auto; padding: 0.8rem 2rem;">
+            Check Payment Status
+        </button>
+        <div id="manualVerifyResult" style="margin-top: 1rem;"></div>
     </div>
 
     <!-- Load JavaScript files -->

@@ -1,4 +1,9 @@
 async function processPayment() {
+  if (!selectedPlan || !selectedPlan.plan_type) {
+    alert('No plan selected or invalid plan data');
+    return;
+  }
+
   const customerEmail = document.getElementById('customerEmail').value.trim();
 
   if (!customerEmail || !/^\S+@\S+\.\S+$/.test(customerEmail)) {
@@ -16,7 +21,7 @@ async function processPayment() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email: customerEmail,
-        planType: selectedPlan.name
+        planType: selectedPlan.plan_type
       })
     });
     const paymentData = await response.json();
