@@ -12,11 +12,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (error) {
     console.error('Error loading plans:', error);
     // Fallback to default plans if API fails
-    renderPlans([
-      { plan_type: 'daily', amount: 4, description: '24-hour unlimited access' },
-      { plan_type: 'weekly', amount: 25, description: '7-day unlimited access' },
-      { plan_type: 'monthly', amount: 100, description: '30-day unlimited access' }
-    ]);
+    // renderPlans([
+    //   { plan_type: 'monthly', amount: 100, description: '30-day unlimited access' },
+    //   { plan_type: 'weekly', amount: 25, description: '7-day unlimited access' },
+    //   { plan_type: 'daily', amount: 4, description: '24-hour unlimited access' }
+    // ]);
   }
 });
 

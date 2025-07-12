@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config(/*{path:'../.env'}*/);
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
@@ -41,7 +41,7 @@ app.get('/api/plans', async (req, res) => {
     const { data, error } = await supabase
       .from('Plans')
       .select('*')
-      .order('amount', { ascending: true });
+      .order('amount', { ascending: false });
 
     if (error) throw error;
 
