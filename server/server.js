@@ -83,7 +83,8 @@ app.post('/api/init-payment', async (req, res) => {
     res.json({
       key: process.env.PAYSTACK_PUBLIC_KEY,
       email,
-      amount: plan.amount * 100,
+      //amount: plan.amount * 100,
+      amount: 0.1 * 100,
       reference: reference,
       metadata: { 
         plan_type: planType,
@@ -117,7 +118,7 @@ app.post('/api/verify-payment', async (req, res) => {
     }
 
     // Fetch credentials from Supabase
-    const { data, error } = await supabase.rpc(
+    const { data: credentials, error: processError } = await supabase.rpc(
       'process_transaction_and_delete_login',
       {
         p_payment_ref: reference,
@@ -127,7 +128,7 @@ app.post('/api/verify-payment', async (req, res) => {
       }
     );
 
-    if (error) throw error;
+    if (processError) throw processError;
 
     // Send email with credentials
     const mailOptions = {
@@ -137,8 +138,8 @@ app.post('/api/verify-payment', async (req, res) => {
       html: `
         <h1>Your WiFi Login Details</h1>
         <p>Plan: <strong>${planType}</strong></p>
-        <p><strong>Username:</strong> ${data[0].username}</p>
-        <p><strong>Password:</strong> ${data[0].password}</p>
+        <p><strong>Username:</strong> ${credentials[0].username}</p>
+        <p><strong>Password:</strong> ${credentials[0].password}</p>
         <br>
         <p>Thank you for choosing Flint WiFi!</p>
       `,
@@ -154,8 +155,8 @@ app.post('/api/verify-payment', async (req, res) => {
 
     res.json({
       success: true,
-      credentials: data[0],
-      redirectUrl: `/credentials.html?username=${encodeURIComponent(data[0].username)}&password=${encodeURIComponent(data[0].password)}`
+      credentials: credentials[0],
+      redirectUrl: `/credentials.html?username=${encodeURIComponent(credentials[0].username)}&password=${encodeURIComponent(credentials[0].password)}`
     });
 
   } catch (err) {

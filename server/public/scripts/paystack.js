@@ -37,8 +37,8 @@ async function processPayment() {
         body: JSON.stringify({
           reference: response.reference,
           email: customerEmail,
-          planType: selectedPlan.name,
-          amount: selectedPlan.amount
+          planType: selectedPlan.plan_type,
+          amount: parseFloat(selectedPlan.amount)
         })
       })
       .then(verification => verification.json())
