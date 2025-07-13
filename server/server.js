@@ -83,8 +83,8 @@ app.post('/api/init-payment', async (req, res) => {
     res.json({
       key: process.env.PAYSTACK_PUBLIC_KEY,
       email,
-      //amount: plan.amount * 100,
-      amount: 0.1 * 100,
+      amount: plan.amount * 100,
+      //amount: 0.1 * 100,
       reference: reference,
       metadata: { 
         plan_type: planType,
