@@ -186,7 +186,7 @@ async function submitManualVerify() {
 
         if (result.status === 'exists') {
             resultDiv.innerHTML = `
-                <p>Your payment was already processed.</p>
+                <p>Your payment was already processed. Please check your email for credentials.</p>
                 <p>Reference: ${result.reference}</p>
             `;
         } 
