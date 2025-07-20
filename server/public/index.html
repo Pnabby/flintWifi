@@ -401,10 +401,28 @@
         </div>
     </div>
 
+    <!-- Manual Verify Modal -->
+    <div id="manualVerifyModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Check Payment Status</h2>
+                <p class="modal-description">Enter the email you used for payment to check your status</p>
+            </div>
+            <div class="form-group">
+                <label for="verifyEmail">Email Address</label>
+                <input type="email" id="verifyEmail" class="form-control" placeholder="your@email.com" required>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeVerifyModal()">Cancel</button>
+                <button class="btn" onclick="submitManualVerify()">Check Status</button>
+            </div>
+        </div>
+    </div>
+
     <div class="manual-verify" style="margin-top: 3rem; text-align: center;">
         <h3>Having issues?</h3>
         <p>If you've paid but didn't receive credentials, check your transaction status</p>
-        <button onclick="manualVerify()" class="btn" style="width: auto; padding: 0.8rem 2rem;">
+        <button onclick="openVerifyModal()" class="btn" style="width: auto; padding: 0.8rem 2rem;">
             Check Payment Status
         </button>
         <div id="manualVerifyResult" style="margin-top: 1rem;"></div>
