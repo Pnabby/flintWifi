@@ -40,11 +40,10 @@ app.get('/api/plans', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('Plans')
-      .select('*')
-      .order('amount', { ascending: false });
+      .select('plan_type, amount, description, enabled') 
+      .order('amount', { ascending: true });
 
     if (error) throw error;
-
     res.json(data);
   } catch (err) {
     console.error(err);
@@ -55,47 +54,36 @@ app.get('/api/plans', async (req, res) => {
 // API: Initialize Paystack payment
 app.post('/api/init-payment', async (req, res) => {
   const { email, planType } = req.body;
-  //console.log("Received request:", { email, planType });
-  
+
   try {
-    // Get plan from database
-    console.log(`Fetching plan from Supabase: ${planType}`);
     const { data: plan, error } = await supabase
       .from('Plans')
-      .select('*')
+      .select('plan_type, amount, enabled')
       .eq('plan_type', planType)
       .single();
 
-    if (error) {
-      console.error("Supabase error:", error);
-      return res.status(400).json({ error: "Database error" });
+    if (error) return res.status(400).json({ error: "Database error" });
+    if (!plan)  return res.status(400).json({ error: "Plan not found" });
+
+    if (plan.enabled === false) {
+      return res.status(403).json({ error: "This plan is currently disabled" });
     }
 
-    if (!plan) {
-      console.error("Plan not found in DB. Searched for:", planType);
-      return res.status(400).json({ error: "Plan not found" });
-    }
-
-    console.log("Plan found:", plan);
-
-    const reference = `${planType}-${Math.floor(Math.random() * 1000000000)}`;
+    const reference = `${planType}-${Math.floor(Math.random() * 1e9)}`;
 
     res.json({
       key: process.env.PAYSTACK_PUBLIC_KEY,
       email,
       amount: plan.amount * 100,
-      //amount: 0.1 * 100,
-      reference: reference,
-      metadata: { 
-        plan_type: planType,
-        custom_reference: reference // Store the custom format
-      }
+      reference,
+      metadata: { plan_type: planType, custom_reference: reference }
     });
   } catch (err) {
     console.error(err);
     res.status(400).json({ error: "Failed to initialize payment" });
   }
 });
+
 
 // API: Verify payment & fetch WiFi credentials
 app.post('/api/verify-payment', async (req, res) => {
@@ -188,9 +176,9 @@ app.post('/api/manual-verify', async (req, res) => {
 
     const customerId = customerData.data.id;
 
-    // Step 2: Fetch latest transaction for this customer
+    // Step 2: Fetch last 5 transactions for this customer
     const txResponse = await fetch(
-      `https://api.paystack.co/transaction?customer=${customerId}&perPage=1`,
+      `https://api.paystack.co/transaction?customer=${customerId}&perPage=3`,
       {
         headers: {
           Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
@@ -205,31 +193,38 @@ app.post('/api/manual-verify', async (req, res) => {
       return res.status(404).json({ error: "No transactions found for this customer" });
     }
 
-    const transaction = txData.data[0];
+    // Calculate date 2 days ago
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
-    // Step 3: Extract plan type and amount
-    const planType = transaction.reference.split('-')[0];
-    const amount = transaction.amount / 100;
+    // Step 3: Check each transaction (newest first)
+    for (const transaction of txData.data) {
+      // Skip non-successful transactions
+      if (transaction.status !== 'success') continue;
 
-    // Step 4: Check if this transaction already exists in Supabase
-    const { data: existingTx, error: txError } = await supabase
-      .from('Transactions')
-      .select('*')
-      .eq('payment_reference', transaction.reference)
-      .maybeSingle();
+      // Parse transaction date and check if it's within 2 days
+      const transactionDate = new Date(transaction.paid_at || transaction.created_at);
+      if (transactionDate < twoDaysAgo) {
+        console.log(`Skipping transaction ${transaction.reference} - older than 2 days`);
+        continue;
+      }
 
-    if (txError) throw txError;
+      // Check if this transaction exists in our database
+      const { data: existingTx, error: txError } = await supabase
+        .from('Transactions')
+        .select('*')
+        .eq('payment_reference', transaction.reference)
+        .maybeSingle();
 
-    if (existingTx) {
-      return res.json({
-        status: 'exists',
-        message: "Transaction already processed",
-        reference: transaction.reference
-      });
-    }
+      if (txError) throw txError;
 
-    // Step 5: If payment was successful, process it
-    if (transaction.status === 'success') {
+      // If transaction is already in our DB, skip to next one
+      if (existingTx) continue;
+
+      // If we get here, we found a valid transaction to process
+      const planType = transaction.reference.split('-')[0];
+      const amount = transaction.amount / 100;
+
       const { data: credentials, error: processError } = await supabase.rpc(
         'process_transaction_and_delete_login',
         {
@@ -242,8 +237,7 @@ app.post('/api/manual-verify', async (req, res) => {
 
       if (processError) throw processError;
 
-      // Optionally: send email to user here
-          // Send email with credentials
+      // Send email with credentials
       const mailOptions = {
         from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
         to: email,
@@ -263,21 +257,40 @@ app.post('/api/manual-verify', async (req, res) => {
         console.log('✅ Email sent:', info.messageId);
       } catch (emailError) {
         console.error('❌ Failed to send email:', emailError);
-        // Still proceed to show credentials
       }
 
       return res.json({
         status: 'processed',
         credentials: credentials?.[0],
-        reference: transaction.reference
+        reference: transaction.reference,
+        message: "Payment processed successfully"
       });
     }
 
-    // Step 6: Payment was found but not successful
+    // If we checked all transactions and didn't find any valid ones
+    // Check if any recent processed transactions exist
+    const { data: recentProcessedTx, error: recentTxError } = await supabase
+      .from('Transactions')
+      .select('payment_reference, created_at')
+      .eq('customer_email', email)
+      .gte('created_at', twoDaysAgo.toISOString())
+      .limit(1);
+
+    if (recentTxError) throw recentTxError;
+
+    if (recentProcessedTx && recentProcessedTx.length > 0) {
+      return res.json({
+        status: 'exists',
+        message: "Your recent payment was already processed",
+        reference: recentProcessedTx[0].payment_reference
+      });
+    }
+
+    // No valid transactions found
     res.json({
       status: 'unprocessed',
-      message: "Payment not successful",
-      reference: transaction.reference
+      message: "No successful unprocessed payments found in the last 2 days",
+      reference: null
     });
 
   } catch (err) {

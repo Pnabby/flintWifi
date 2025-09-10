@@ -22,55 +22,49 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function renderPlans(plans) {
   const plansContainer = document.querySelector('.plans-container');
-  plansContainer.innerHTML = ''; // Clear existing plans
+  plansContainer.innerHTML = '';
 
   plans.forEach(plan => {
+    // default to enabled if column missing (safety)
+    const isEnabled = plan.enabled !== false;
+
     const planElement = document.createElement('div');
-    planElement.className = 'plan';
-    
-    // Determine features based on plan type
+    planElement.className = 'plan' + (isEnabled ? '' : ' plan--disabled');
+
     let features = [];
     if (plan.plan_type === 'daily') {
-      features = [
-        '24-hour unlimited access',
-        'High-speed connectivity',
-        'Two device support',
-        'Starter pack'
-      ];
+      features = ['24-hour unlimited access', 'High-speed connectivity', 'Two device support', 'Starter pack'];
     } else if (plan.plan_type === 'weekly') {
-      features = [
-        '7-day unlimited access',
-        'High-speed connectivity',
-        'Two device support',
-        'Save 10% vs daily plans'
-      ];
+      features = ['7-day unlimited access', 'High-speed connectivity', 'Two device support', 'Save 10% vs daily plans'];
     } else if (plan.plan_type === 'monthly') {
-      features = [
-        '30-day unlimited access',
-        'High-speed connectivity',
-        'Two device support',
-        'Best value - save 15%'
-      ];
+      features = ['30-day unlimited access', 'High-speed connectivity', 'Two device support', 'Best value - save 15%'];
     }
-    
-    // Use description from database if available
-    if (plan.description) {
-      features.unshift(plan.description);
-    }
+    if (plan.description) features.unshift(plan.description);
 
     planElement.innerHTML = `
       <div class="plan-header">
-        <h2 class="plan-title">${capitalizeFirstLetter(plan.plan_type)} Plan</h2>
+        <h2 class="plan-title">
+          ${capitalizeFirstLetter(plan.plan_type)} Plan
+          ${!isEnabled ? '<span class="badge badge--disabled">Disabled</span>' : ''}
+        </h2>
         <div class="plan-price">${plan.amount} <span>GHS</span></div>
       </div>
       <ul class="plan-features">
-        ${features.map(feature => `<li>${feature}</li>`).join('')}
+        ${features.map(f => `<li>${f}</li>`).join('')}
       </ul>
-      <button class="btn" onclick="selectPlan('${plan.plan_type}')">Get ${capitalizeFirstLetter(plan.plan_type)} Plan</button>
+      <button
+        class="btn"
+        ${!isEnabled ? 'disabled aria-disabled="true"' : ''}
+        onclick="${isEnabled ? `selectPlan('${plan.plan_type}')` : ''}">
+        ${isEnabled ? `Get ${capitalizeFirstLetter(plan.plan_type)} Plan` : 'Temporarily Unavailable'}
+      </button>
     `;
-    
+
     plansContainer.appendChild(planElement);
   });
+
+  // Keep the global list for selectPlan()
+  availablePlans = plans;
 }
 
 function capitalizeFirstLetter(string) {
@@ -131,13 +125,14 @@ async function manualVerify() {
 }
 
 function selectPlan(planType) {
-  selectedPlan = availablePlans.find(plan => plan.plan_type === planType);
-  if (selectedPlan) {
-    console.log("Selected plan:", selectedPlan); // Debug log
-    document.getElementById('emailModal').style.display = 'flex';
-  } else {
-    console.error("Plan not found for type:", planType);
+  const plan = availablePlans.find(p => p.plan_type === planType);
+  if (!plan) return console.error('Plan not found:', planType);
+  if (plan.enabled === false) {
+    alert('This plan is currently disabled.');
+    return;
   }
+  selectedPlan = plan;
+  document.getElementById('emailModal').style.display = 'flex';
 }
 
 function closeModal() {

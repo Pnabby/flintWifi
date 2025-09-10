@@ -6,6 +6,24 @@
     <title>Flint WiFi Plans</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        .plan--disabled {
+        opacity: 0.6;
+        filter: grayscale(0.3);
+        }
+        .badge--disabled {
+        background: var(--danger);
+        color: #fff;
+        font-size: 0.75rem;
+        padding: 0.15rem 0.4rem;
+        border-radius: 0.4rem;
+        margin-left: 0.4rem;
+        vertical-align: middle;
+        }
+        .plan--disabled .btn[disabled] {
+        cursor: not-allowed;
+        opacity: 0.9;
+        }
+
         .manual-verify {
         background: white;
         padding: 2rem;
