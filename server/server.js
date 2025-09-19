@@ -76,7 +76,12 @@ app.post('/api/init-payment', async (req, res) => {
       email,
       amount: plan.amount * 100,
       reference,
-      metadata: { plan_type: planType, custom_reference: reference }
+      metadata: { plan_type: planType, custom_reference: reference },
+
+      subaccount: process.env.PARTNER_SUBACCOUNT_CODE,
+      bearer: "all",   // 👈 split fees proportionally
+      transaction_charge: 0
+
     });
   } catch (err) {
     console.error(err);
