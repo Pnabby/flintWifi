@@ -78,9 +78,9 @@ app.post('/api/init-payment', async (req, res) => {
       reference,
       metadata: { plan_type: planType, custom_reference: reference },
 
-      subaccount: process.env.PARTNER_SUBACCOUNT_CODE,
-      bearer: "all",   // 👈 split fees proportionally
-      transaction_charge: 0
+      split_code: process.env.PAYSTACK_SPLIT_CODE,
+      bearer: "all"   
+
 
     });
   } catch (err) {
