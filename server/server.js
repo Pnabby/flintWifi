@@ -1,10 +1,11 @@
-require('dotenv').config(/*{path:'../.env'}*/);
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
 const path = require('path');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args)); // add this line
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+
 const app = express();
 
 // Middleware
@@ -40,7 +41,7 @@ app.get('/api/plans', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('Plans')
-      .select('plan_type, amount, description, enabled') 
+      .select('plan_type, amount, description, enabled')
       .order('amount', { ascending: true });
 
     if (error) throw error;
@@ -64,42 +65,25 @@ app.post('/api/init-payment', async (req, res) => {
 
     if (error) return res.status(400).json({ error: "Database error" });
     if (!plan) return res.status(400).json({ error: "Plan not found" });
-    if (!plan.enabled) return res.status(403).json({ error: "This plan is currently disabled" });
+
+    if (plan.enabled === false) {
+      return res.status(403).json({ error: "This plan is currently disabled" });
+    }
 
     const reference = `${planType}-${Math.floor(Math.random() * 1e9)}`;
 
-    // 🔑 Initialize payment with Paystack API
-    const paystackResponse = await fetch("https://api.paystack.co/transaction/initialize", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        email,
-        amount: plan.amount * 100,
-        reference,
-        metadata: { plan_type: planType, custom_reference: reference },
-        split_code: process.env.PAYSTACK_SPLIT_CODE // 👈 apply your split group
-      })
+    res.json({
+      key: process.env.PAYSTACK_PUBLIC_KEY,
+      email,
+      amount: plan.amount * 100,
+      reference,
+      metadata: { plan_type: planType, custom_reference: reference }
     });
-
-    const paystackData = await paystackResponse.json();
-
-    if (!paystackData.status) {
-      return res.status(400).json({ error: "Failed to initialize transaction" });
-    }
-
-    // return authorization_url for frontend redirect
-    res.json(paystackData.data);
-
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to initialize payment" });
+    res.status(400).json({ error: "Failed to initialize payment" });
   }
 });
-
-
 
 // API: Verify payment & fetch WiFi credentials
 app.post('/api/verify-payment', async (req, res) => {
@@ -154,7 +138,6 @@ app.post('/api/verify-payment', async (req, res) => {
       console.log('✅ Email sent:', info.messageId);
     } catch (emailError) {
       console.error('❌ Failed to send email:', emailError);
-      // Still proceed to show credentials
     }
 
     res.json({
@@ -169,6 +152,7 @@ app.post('/api/verify-payment', async (req, res) => {
   }
 });
 
+// API: Manual verification (fallback)
 app.post('/api/manual-verify', async (req, res) => {
   const { email } = req.body;
 
@@ -186,13 +170,12 @@ app.post('/api/manual-verify', async (req, res) => {
     const customerData = await customerResponse.json();
 
     if (!customerData.status || !customerData.data) {
-      console.log('Customer not found on Paystack');
       return res.status(404).json({ error: "Customer not found on Paystack" });
     }
 
     const customerId = customerData.data.id;
 
-    // Step 2: Fetch last 5 transactions for this customer
+    // Step 2: Fetch last 3 transactions for this customer
     const txResponse = await fetch(
       `https://api.paystack.co/transaction?customer=${customerId}&perPage=3`,
       {
@@ -205,7 +188,6 @@ app.post('/api/manual-verify', async (req, res) => {
     const txData = await txResponse.json();
 
     if (!txData.status || !txData.data || txData.data.length === 0) {
-      console.log("No transactions found for this customer");
       return res.status(404).json({ error: "No transactions found for this customer" });
     }
 
@@ -213,19 +195,13 @@ app.post('/api/manual-verify', async (req, res) => {
     const twoDaysAgo = new Date();
     twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
-    // Step 3: Check each transaction (newest first)
+    // Step 3: Check transactions
     for (const transaction of txData.data) {
-      // Skip non-successful transactions
       if (transaction.status !== 'success') continue;
 
-      // Parse transaction date and check if it's within 2 days
       const transactionDate = new Date(transaction.paid_at || transaction.created_at);
-      if (transactionDate < twoDaysAgo) {
-        console.log(`Skipping transaction ${transaction.reference} - older than 2 days`);
-        continue;
-      }
+      if (transactionDate < twoDaysAgo) continue;
 
-      // Check if this transaction exists in our database
       const { data: existingTx, error: txError } = await supabase
         .from('Transactions')
         .select('*')
@@ -233,11 +209,8 @@ app.post('/api/manual-verify', async (req, res) => {
         .maybeSingle();
 
       if (txError) throw txError;
-
-      // If transaction is already in our DB, skip to next one
       if (existingTx) continue;
 
-      // If we get here, we found a valid transaction to process
       const planType = transaction.reference.split('-')[0];
       const amount = transaction.amount / 100;
 
@@ -253,7 +226,6 @@ app.post('/api/manual-verify', async (req, res) => {
 
       if (processError) throw processError;
 
-      // Send email with credentials
       const mailOptions = {
         from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
         to: email,
@@ -283,16 +255,13 @@ app.post('/api/manual-verify', async (req, res) => {
       });
     }
 
-    // If we checked all transactions and didn't find any valid ones
-    // Check if any recent processed transactions exist
-    const { data: recentProcessedTx, error: recentTxError } = await supabase
+    // If no valid transactions found
+    const { data: recentProcessedTx } = await supabase
       .from('Transactions')
       .select('payment_reference, created_at')
       .eq('customer_email', email)
       .gte('created_at', twoDaysAgo.toISOString())
       .limit(1);
-
-    if (recentTxError) throw recentTxError;
 
     if (recentProcessedTx && recentProcessedTx.length > 0) {
       return res.json({
@@ -302,7 +271,6 @@ app.post('/api/manual-verify', async (req, res) => {
       });
     }
 
-    // No valid transactions found
     res.json({
       status: 'unprocessed',
       message: "No successful unprocessed payments found in the last 2 days",
@@ -314,7 +282,6 @@ app.post('/api/manual-verify', async (req, res) => {
     res.status(500).json({ error: "Manual verification failed" });
   }
 });
-
 
 // Start server
 const PORT = process.env.PORT || 3000;
