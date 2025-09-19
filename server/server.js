@@ -77,7 +77,8 @@ app.post('/api/init-payment', async (req, res) => {
       email,
       amount: plan.amount * 100,
       reference,
-      metadata: { plan_type: planType, custom_reference: reference }
+      metadata: { plan_type: planType, custom_reference: reference },
+      split_code: process.env.PAYSTACK_SPLIT_CODE
     });
   } catch (err) {
     console.error(err);
