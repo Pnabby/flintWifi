@@ -63,30 +63,42 @@ app.post('/api/init-payment', async (req, res) => {
       .single();
 
     if (error) return res.status(400).json({ error: "Database error" });
-    if (!plan)  return res.status(400).json({ error: "Plan not found" });
-
-    if (plan.enabled === false) {
-      return res.status(403).json({ error: "This plan is currently disabled" });
-    }
+    if (!plan) return res.status(400).json({ error: "Plan not found" });
+    if (!plan.enabled) return res.status(403).json({ error: "This plan is currently disabled" });
 
     const reference = `${planType}-${Math.floor(Math.random() * 1e9)}`;
 
-    res.json({
-      key: process.env.PAYSTACK_PUBLIC_KEY,
-      email,
-      amount: plan.amount * 100,
-      reference,
-      metadata: { plan_type: planType, custom_reference: reference },
-
-      split_code: process.env.PAYSTACK_SPLIT_CODE  
-
-
+    // 🔑 Initialize payment with Paystack API
+    const paystackResponse = await fetch("https://api.paystack.co/transaction/initialize", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        email,
+        amount: plan.amount * 100,
+        reference,
+        metadata: { plan_type: planType, custom_reference: reference },
+        split_code: process.env.PAYSTACK_SPLIT_CODE // 👈 apply your split group
+      })
     });
+
+    const paystackData = await paystackResponse.json();
+
+    if (!paystackData.status) {
+      return res.status(400).json({ error: "Failed to initialize transaction" });
+    }
+
+    // return authorization_url for frontend redirect
+    res.json(paystackData.data);
+
   } catch (err) {
     console.error(err);
-    res.status(400).json({ error: "Failed to initialize payment" });
+    res.status(500).json({ error: "Failed to initialize payment" });
   }
 });
+
 
 
 // API: Verify payment & fetch WiFi credentials
