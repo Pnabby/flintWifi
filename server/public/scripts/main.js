@@ -143,68 +143,67 @@ function closeCredentialsModal() {
   document.getElementById('credentialsModal').style.display = 'none';
 }
 function openVerifyModal() {
-    document.getElementById('manualVerifyModal').style.display = 'flex';
-    document.getElementById('verifyEmail').value = ''; // Clear any previous input
-    document.getElementById('manualVerifyResult').innerHTML = ''; // Clear previous results
+  document.getElementById('manualVerifyModal').style.display = 'flex';
+  document.getElementById('verifyEmail').value = '';
+  document.getElementById('verifyReference').value = '';
+  document.getElementById('manualVerifyResult').innerHTML = '';
 }
 
 function closeVerifyModal() {
-    document.getElementById('manualVerifyModal').style.display = 'none';
+  document.getElementById('manualVerifyModal').style.display = 'none';
 }
 
+
 async function submitManualVerify() {
-    const email = document.getElementById('verifyEmail').value;
-    if (!email) {
-        alert('Please enter your email address');
-        return;
+  const email = document.getElementById('verifyEmail').value.trim();
+  const reference = document.getElementById('verifyReference').value.trim();
+
+  if (!email && !reference) {
+    alert('Enter a Payment Reference or your Email');
+    return;
+  }
+
+  const resultDiv = document.getElementById('manualVerifyResult');
+  resultDiv.innerHTML = '<div class="loader"></div><p>Checking payment status...</p>';
+  closeVerifyModal();
+
+  try {
+    const response = await fetch('/api/manual-verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reference ? { reference, email } : { email })
+    });
+
+    const result = await response.json();
+    if (result.error) {
+      resultDiv.innerHTML = `<p style="color: var(--danger)">${result.error}</p>`;
+      return;
     }
 
-    const resultDiv = document.getElementById('manualVerifyResult');
-    resultDiv.innerHTML = '<div class="loader"></div><p>Checking payment status...</p>';
-    closeVerifyModal();
-
-    try {
-        const response = await fetch('/api/manual-verify', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ email })
-        });
-        
-        const result = await response.json();
-
-        if (result.error) {
-            resultDiv.innerHTML = `<p style="color: var(--danger)">${result.error}</p>`;
-            return;
-        }
-
-        if (result.status === 'exists') {
-            resultDiv.innerHTML = `
-                <p>Your payment was already processed. Please check your email for credentials.</p>
-                <p>Reference: ${result.reference}</p>
-            `;
-        } 
-        else if (result.status === 'processed') {
-            resultDiv.innerHTML = `
-                <p style="color: var(--success)">✓ Payment verified!</p>
-                <p>Username: <strong>${result.credentials.username}</strong></p>
-                <p>Password: <strong>${result.credentials.password}</strong></p>
-                <p>Check your email for these details.</p>
-            `;
-        }
-        else {
-            resultDiv.innerHTML = `
-                <p>Payment found but not successful yet.</p>
-                <p>Status: ${result.message}</p>
-                <p>Reference: ${result.reference}</p>
-            `;
-        }
-    } catch (error) {
-        resultDiv.innerHTML = `
-            <p style="color: var(--danger)">Failed to verify payment</p>
-            <p>Please try again later or contact support</p>
-        `;
-        console.error("Manual verify failed:", error);
+    if (result.status === 'exists') {
+      resultDiv.innerHTML = `
+        <p>Your payment was already processed.</p>
+        <p>Reference: ${result.reference}</p>
+      `;
+    } else if (result.status === 'processed') {
+      resultDiv.innerHTML = `
+        <p style="color: var(--success)">✓ Payment verified!</p>
+        <p>Username: <strong>${result.credentials.username}</strong></p>
+        <p>Password: <strong>${result.credentials.password}</strong></p>
+        <p>We also emailed these details to you.</p>
+      `;
+    } else {
+      resultDiv.innerHTML = `
+        <p>Payment found but not successful yet.</p>
+        <p>Status: ${result.message}</p>
+        <p>${result.reference ? `Reference: ${result.reference}` : ''}</p>
+      `;
     }
+  } catch (error) {
+    resultDiv.innerHTML = `
+      <p style="color: var(--danger)">Failed to verify payment</p>
+      <p>Please try again later or contact support</p>
+    `;
+    console.error("Manual verify failed:", error);
+  }
 }

@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config(/*{path:'../.env'}*/);
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
@@ -52,7 +52,8 @@ app.get('/api/plans', async (req, res) => {
   }
 });
 
-// API: Initialize Paystack payment
+
+// /api/init-payment  — PREP ONLY (Inline flow)
 app.post('/api/init-payment', async (req, res) => {
   const { email, planType } = req.body;
 
@@ -85,13 +86,14 @@ app.post('/api/init-payment', async (req, res) => {
       metadata: { plan_type: planType, custom_reference: reference }
     };
 
-    //console.log("Inline init payload:", { reference, split_code: payload.split_code });
+    console.log("Inline init payload:", { reference, split_code: payload.split_code });
     res.json(payload);
   } catch (err) {
     console.error("Failed to prep payment:", err);
     res.status(500).json({ error: "Failed to prep payment" });
   }
 });
+
 
 
 
@@ -165,19 +167,116 @@ app.post('/api/verify-payment', async (req, res) => {
 
 // API: Manual verification (fallback)
 app.post('/api/manual-verify', async (req, res) => {
-  const { email } = req.body;
+  const { email, reference } = req.body;
 
   try {
+    // --- Path A: reference provided (fast path) ---
+    if (reference && reference.trim()) {
+      // 1) Verify specific transaction on Paystack
+      const verifyResp = await fetch(
+        `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+        { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
+      );
+      const verifyData = await verifyResp.json();
+
+      if (!verifyData.status || !verifyData.data) {
+        return res.status(404).json({ error: "Payment not found for this reference" });
+      }
+
+      const tx = verifyData.data;
+
+      // Only proceed on successful charge
+      if (tx.status !== 'success') {
+        return res.json({
+          status: 'unprocessed',
+          message: `Transaction is ${tx.status}.`,
+          reference
+        });
+      }
+
+      // 2) Avoid double-processing
+      const { data: existingTx, error: txError } = await supabase
+        .from('Transactions')
+        .select('*')
+        .eq('payment_reference', reference)
+        .maybeSingle();
+
+      if (txError) throw txError;
+      if (existingTx) {
+        return res.json({
+          status: 'exists',
+          message: "This payment was already processed",
+          reference
+        });
+      }
+
+      // 3) Derive plan & amount; prefer metadata, fallback to ref prefix
+      const planType =
+        tx.metadata?.plan_type ??
+        (reference.includes('-') ? reference.split('-')[0] : null);
+
+      const amount = tx.amount / 100;  // kobo/pesewas → base unit
+
+      // Choose the best email: explicit body > Paystack customer email
+      const customerEmail = email?.trim() || tx.customer?.email;
+      if (!customerEmail) {
+        return res.status(400).json({ error: "Could not determine customer email" });
+      }
+      if (!planType) {
+        return res.status(400).json({ error: "Could not determine plan type" });
+      }
+
+      // 4) Process in Supabase (creates tx row, returns credentials, deletes login)
+      const { data: credentials, error: processError } = await supabase.rpc(
+        'process_transaction_and_delete_login',
+        {
+          p_payment_ref: reference,
+          p_customer_email: customerEmail,
+          p_plan_type: planType,
+          p_amount: amount
+        }
+      );
+      if (processError) throw processError;
+
+      // 5) Email credentials
+      const mailOptions = {
+        from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
+        to: customerEmail,
+        subject: 'Your WiFi Credentials',
+        html: `
+          <h1>Your WiFi Login Details</h1>
+          <p>Plan: <strong>${planType}</strong></p>
+          <p><strong>Username:</strong> ${credentials[0].username}</p>
+          <p><strong>Password:</strong> ${credentials[0].password}</p>
+          <br>
+          <p>Thank you for choosing Flint WiFi!</p>
+        `,
+      };
+      try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log('✅ Email sent:', info.messageId);
+      } catch (emailError) {
+        console.error('❌ Failed to send email:', emailError);
+      }
+
+      return res.json({
+        status: 'processed',
+        credentials: credentials?.[0],
+        reference,
+        message: "Payment processed successfully"
+      });
+    }
+
+    // --- Path B: email-only flow (your current logic, unchanged except small cleanup) ---
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: "Provide a payment reference or your email" });
+    }
+
     // Step 1: Fetch Paystack customer by email
     const customerResponse = await fetch(
       `https://api.paystack.co/customer/${encodeURIComponent(email)}`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        },
-      }
+      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
     );
-
     const customerData = await customerResponse.json();
 
     if (!customerData.status || !customerData.data) {
@@ -189,13 +288,8 @@ app.post('/api/manual-verify', async (req, res) => {
     // Step 2: Fetch last 3 transactions for this customer
     const txResponse = await fetch(
       `https://api.paystack.co/transaction?customer=${customerId}&perPage=3`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        },
-      }
+      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
     );
-
     const txData = await txResponse.json();
 
     if (!txData.status || !txData.data || txData.data.length === 0) {
@@ -206,7 +300,7 @@ app.post('/api/manual-verify', async (req, res) => {
     const twoDaysAgo = new Date();
     twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
-    // Step 3: Check transactions
+    // Step 3: Check recent successful, not-yet-processed tx
     for (const transaction of txData.data) {
       if (transaction.status !== 'success') continue;
 
@@ -222,19 +316,20 @@ app.post('/api/manual-verify', async (req, res) => {
       if (txError) throw txError;
       if (existingTx) continue;
 
-      const planType = transaction.reference.split('-')[0];
-      const amount = transaction.amount / 100;
+      const derivedPlanType =
+        transaction.metadata?.plan_type ??
+        (transaction.reference.includes('-') ? transaction.reference.split('-')[0] : null);
+      const derivedAmount = transaction.amount / 100;
 
       const { data: credentials, error: processError } = await supabase.rpc(
         'process_transaction_and_delete_login',
         {
           p_payment_ref: transaction.reference,
           p_customer_email: email,
-          p_plan_type: planType,
-          p_amount: amount
+          p_plan_type: derivedPlanType,
+          p_amount: derivedAmount
         }
       );
-
       if (processError) throw processError;
 
       const mailOptions = {
@@ -243,14 +338,13 @@ app.post('/api/manual-verify', async (req, res) => {
         subject: 'Your WiFi Credentials',
         html: `
           <h1>Your WiFi Login Details</h1>
-          <p>Plan: <strong>${planType}</strong></p>
+          <p>Plan: <strong>${derivedPlanType}</strong></p>
           <p><strong>Username:</strong> ${credentials[0].username}</p>
           <p><strong>Password:</strong> ${credentials[0].password}</p>
           <br>
           <p>Thank you for choosing Flint WiFi!</p>
         `,
       };
-
       try {
         const info = await transporter.sendMail(mailOptions);
         console.log('✅ Email sent:', info.messageId);
@@ -266,7 +360,7 @@ app.post('/api/manual-verify', async (req, res) => {
       });
     }
 
-    // If no valid transactions found
+    // If no valid transactions found, check if processed recently
     const { data: recentProcessedTx } = await supabase
       .from('Transactions')
       .select('payment_reference, created_at')
@@ -287,12 +381,12 @@ app.post('/api/manual-verify', async (req, res) => {
       message: "No successful unprocessed payments found in the last 2 days",
       reference: null
     });
-
   } catch (err) {
     console.error('Manual verification error:', err);
     res.status(500).json({ error: "Manual verification failed" });
   }
 });
+
 
 // Start server
 const PORT = process.env.PORT || 3000;

@@ -423,19 +423,31 @@
     <div id="manualVerifyModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="modal-title">Check Payment Status</h2>
-                <p class="modal-description">Enter the email you used for payment to check your status</p>
+            <h2 class="modal-title">Check Payment Status</h2>
+            <p class="modal-description">
+                Enter your <strong>Payment Reference</strong> sent to your mail (preferred) or the <strong>Email</strong> you used for payment.
+            </p>
             </div>
+
             <div class="form-group">
-                <label for="verifyEmail">Email Address</label>
-                <input type="email" id="verifyEmail" class="form-control" placeholder="your@email.com" required>
+            <label for="verifyReference">Payment Reference (e.g., daily-123456789)</label>
+            <input type="text" id="verifyReference" class="form-control" placeholder="your-reference-here">
             </div>
+
+            <div style="text-align:center; color: var(--gray); margin: 0.25rem 0 0.75rem 0;">— or —</div>
+
+            <div class="form-group">
+            <label for="verifyEmail">Email Address</label>
+            <input type="email" id="verifyEmail" class="form-control" placeholder="your@email.com">
+            </div>
+
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeVerifyModal()">Cancel</button>
-                <button class="btn" onclick="submitManualVerify()">Check Status</button>
+            <button class="btn btn-secondary" onclick="closeVerifyModal()">Cancel</button>
+            <button class="btn" onclick="submitManualVerify()">Check Status</button>
             </div>
         </div>
     </div>
+
 
     <div class="manual-verify" style="margin-top: 3rem; text-align: center;">
         <h3>Having issues?</h3>
