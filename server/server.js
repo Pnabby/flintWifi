@@ -56,6 +56,11 @@ app.post('/api/init-payment', async (req, res) => {
   const { email, planType } = req.body;
 
   try {
+    if (!process.env.PAYSTACK_PUBLIC_KEY) {
+      console.error("PAYSTACK_PUBLIC_KEY not set");
+      return res.status(500).json({ error: "Server misconfiguration" });
+    }
+
     const { data: plan, error } = await supabase
       .from('Plans')
       .select('plan_type, amount, enabled')
@@ -64,25 +69,30 @@ app.post('/api/init-payment', async (req, res) => {
 
     if (error) return res.status(400).json({ error: "Database error" });
     if (!plan)  return res.status(400).json({ error: "Plan not found" });
-
     if (plan.enabled === false) {
       return res.status(403).json({ error: "This plan is currently disabled" });
     }
 
     const reference = `${planType}-${Math.floor(Math.random() * 1e9)}`;
 
-    res.json({
-      key: process.env.PAYSTACK_PUBLIC_KEY,
+    const payload = {
+      key: process.env.PAYSTACK_PUBLIC_KEY,              // pk_test_* / pk_live_*
       email,
-      amount: plan.amount * 100,
+      amount: Math.round(plan.amount * 100),             // pesewas/kobo
       reference,
+      split_code: process.env.PAYSTACK_SPLIT_CODE || null,
       metadata: { plan_type: planType, custom_reference: reference }
-    });
+    };
+
+    //console.log("Inline init payload:", { reference, split_code: payload.split_code });
+    res.json(payload);
   } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: "Failed to initialize payment" });
+    console.error("Failed to prep payment:", err);
+    res.status(500).json({ error: "Failed to prep payment" });
   }
 });
+
+
 
 
 // API: Verify payment & fetch WiFi credentials
