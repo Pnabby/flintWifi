@@ -1,5 +1,6 @@
 let selectedPlan = null;
 let availablePlans = [];
+let manualVerifyMode = 'reference';
 
 // Fetch plans from backend when page loads
 document.addEventListener('DOMContentLoaded', async () => {
@@ -135,6 +136,45 @@ function selectPlan(planType) {
   document.getElementById('emailModal').style.display = 'flex';
 }
 
+function setVerifyMode(mode) {
+  manualVerifyMode = mode;
+
+  const tabRef = document.getElementById('tab-ref');
+  const tabEmail = document.getElementById('tab-email');
+  const panelRef = document.getElementById('panel-ref');
+  const panelEmail = document.getElementById('panel-email');
+
+  // toggle tab active state
+  if (mode === 'reference') {
+    tabRef.classList.add('active');
+    tabRef.setAttribute('aria-selected', 'true');
+    tabEmail.classList.remove('active');
+    tabEmail.setAttribute('aria-selected', 'false');
+
+    panelRef.classList.add('active');
+    panelRef.hidden = false;
+    panelEmail.classList.remove('active');
+    panelEmail.hidden = true;
+
+    // Clear the other field to avoid accidental submission
+    document.getElementById('verifyEmail').value = '';
+  } else {
+    tabEmail.classList.add('active');
+    tabEmail.setAttribute('aria-selected', 'true');
+    tabRef.classList.remove('active');
+    tabRef.setAttribute('aria-selected', 'false');
+
+    panelEmail.classList.add('active');
+    panelEmail.hidden = false;
+    panelRef.classList.remove('active');
+    panelRef.hidden = true;
+
+    // Clear the other field to avoid accidental submission
+    document.getElementById('verifyReference').value = '';
+  }
+}
+
+
 function closeModal() {
   document.getElementById('emailModal').style.display = 'none';
 }
@@ -142,12 +182,16 @@ function closeModal() {
 function closeCredentialsModal() {
   document.getElementById('credentialsModal').style.display = 'none';
 }
+
 function openVerifyModal() {
   document.getElementById('manualVerifyModal').style.display = 'flex';
   document.getElementById('verifyEmail').value = '';
   document.getElementById('verifyReference').value = '';
   document.getElementById('manualVerifyResult').innerHTML = '';
+
+  setVerifyMode('reference');
 }
+
 
 function closeVerifyModal() {
   document.getElementById('manualVerifyModal').style.display = 'none';
@@ -158,8 +202,13 @@ async function submitManualVerify() {
   const email = document.getElementById('verifyEmail').value.trim();
   const reference = document.getElementById('verifyReference').value.trim();
 
-  if (!email && !reference) {
-    alert('Enter a Payment Reference or your Email');
+  // Enforce single-mode input
+  if (manualVerifyMode === 'reference' && !reference) {
+    alert('Enter a Payment Reference.');
+    return;
+  }
+  if (manualVerifyMode === 'email' && !email) {
+    alert('Enter your Email.');
     return;
   }
 
@@ -167,38 +216,78 @@ async function submitManualVerify() {
   resultDiv.innerHTML = '<div class="loader"></div><p>Checking payment status...</p>';
   closeVerifyModal();
 
+  // Build the payload based on mode
+  const payload =
+    manualVerifyMode === 'reference'
+      ? (email ? { reference, email } : { reference }) // email optional here, helps fallback if metadata lacked email
+      : { email };
+
   try {
     const response = await fetch('/api/manual-verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(reference ? { reference, email } : { email })
+      body: JSON.stringify(payload)
     });
 
     const result = await response.json();
+
     if (result.error) {
       resultDiv.innerHTML = `<p style="color: var(--danger)">${result.error}</p>`;
       return;
     }
 
-    if (result.status === 'exists') {
-      resultDiv.innerHTML = `
-        <p>Your payment was already processed.</p>
-        <p>Reference: ${result.reference}</p>
-      `;
-    } else if (result.status === 'processed') {
+    // Show credentials when we have them
+    const hasCreds = result.credentials && result.credentials.username && result.credentials.password;
+
+    if (result.status === 'processed') {
       resultDiv.innerHTML = `
         <p style="color: var(--success)">✓ Payment verified!</p>
-        <p>Username: <strong>${result.credentials.username}</strong></p>
-        <p>Password: <strong>${result.credentials.password}</strong></p>
+        <p><strong>Reference:</strong> ${result.reference}</p>
+        ${hasCreds ? `
+          <p>Username: <strong>${result.credentials.username}</strong></p>
+          <p>Password: <strong>${result.credentials.password}</strong></p>
+        ` : ''}
         <p>We also emailed these details to you.</p>
       `;
-    } else {
-      resultDiv.innerHTML = `
-        <p>Payment found but not successful yet.</p>
-        <p>Status: ${result.message}</p>
-        <p>${result.reference ? `Reference: ${result.reference}` : ''}</p>
-      `;
+
+      // Also pop the nice credentials modal (optional UX)
+      if (hasCreds) {
+        document.getElementById('displayUsername').textContent = result.credentials.username;
+        document.getElementById('displayPassword').textContent = result.credentials.password;
+        document.getElementById('credentialsModal').style.display = 'flex';
+      }
+      return;
     }
+
+    if (result.status === 'exists') {
+      // If backend returns credentials on "exists", show them. Otherwise just tell them it's already processed.
+      if (hasCreds) {
+        resultDiv.innerHTML = `
+          <p>Your payment was already processed.</p>
+          <p><strong>Reference:</strong> ${result.reference}</p>
+          <p>Username: <strong>${result.credentials.username}</strong></p>
+          <p>Password: <strong>${result.credentials.password}</strong></p>
+          <p>We also emailed these details to you.</p>
+        `;
+        document.getElementById('displayUsername').textContent = result.credentials.username;
+        document.getElementById('displayPassword').textContent = result.credentials.password;
+        document.getElementById('credentialsModal').style.display = 'flex';
+      } else {
+        resultDiv.innerHTML = `
+          <p>Your payment was already processed.</p>
+          <p><strong>Reference:</strong> ${result.reference}</p>
+          <p>Please check your email for the credentials.</p>
+        `;
+      }
+      return;
+    }
+
+    // Unprocessed / other statuses
+    resultDiv.innerHTML = `
+      <p>Payment found but not successful yet.</p>
+      <p>Status: ${result.message}</p>
+      <p>${result.reference ? `Reference: ${result.reference}` : ''}</p>
+    `;
   } catch (error) {
     resultDiv.innerHTML = `
       <p style="color: var(--danger)">Failed to verify payment</p>
