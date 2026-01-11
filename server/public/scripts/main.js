@@ -197,6 +197,68 @@ function closeVerifyModal() {
   document.getElementById('manualVerifyModal').style.display = 'none';
 }
 
+function openRetrieveModal() {
+  document.getElementById('retrieveCredentialsModal').style.display = 'flex';
+  document.getElementById('retrieveReference').value = '';
+  document.getElementById('retrieveEmail').value = '';
+  document.getElementById('retrieveResult').innerHTML = '';
+}
+
+function closeRetrieveModal() {
+  document.getElementById('retrieveCredentialsModal').style.display = 'none';
+}
+
+async function submitRetrieveCredentials() {
+  const reference = document.getElementById('retrieveReference').value.trim();
+  const email = document.getElementById('retrieveEmail').value.trim();
+
+  if (!reference) {
+    alert('Enter your payment reference.');
+    return;
+  }
+  if (!email) {
+    alert('Enter your email address.');
+    return;
+  }
+
+  const resultDiv = document.getElementById('retrieveResult');
+  resultDiv.innerHTML = '<div class="loader"></div><p>Retrieving credentials...</p>';
+  closeRetrieveModal();
+
+  try {
+    const response = await fetch('/api/retrieve-credentials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference, email })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || result.error) {
+      resultDiv.innerHTML = `<p style="color: var(--danger)">${result.error || 'Failed to retrieve credentials'}</p>`;
+      return;
+    }
+
+    resultDiv.innerHTML = `
+      <p style="color: var(--success)">Credentials retrieved.</p>
+      <p><strong>Reference:</strong> ${result.reference}</p>
+      <p>Username: <strong>${result.credentials.username}</strong></p>
+      <p>Password: <strong>${result.credentials.password}</strong></p>
+      <p>We also emailed these details to you.</p>
+    `;
+
+    document.getElementById('displayUsername').textContent = result.credentials.username;
+    document.getElementById('displayPassword').textContent = result.credentials.password;
+    document.getElementById('credentialsModal').style.display = 'flex';
+  } catch (error) {
+    resultDiv.innerHTML = `
+      <p style="color: var(--danger)">Failed to retrieve credentials</p>
+      <p>Please try again later or contact support</p>
+    `;
+    console.error("Retrieve credentials failed:", error);
+  }
+}
+
 
 async function submitManualVerify() {
   const email = document.getElementById('verifyEmail').value.trim();

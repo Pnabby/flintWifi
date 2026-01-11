@@ -1,3 +1,78 @@
+let lastVerificationPayload = null;
+
+function showRetryModal(message) {
+  const messageEl = document.getElementById('retryVerifyMessage');
+  if (messageEl) {
+    messageEl.textContent = message || 'Verification is taking longer than usual. Please retry in a moment.';
+  }
+  document.getElementById('retryVerifyModal').style.display = 'flex';
+}
+
+function closeRetryModal() {
+  document.getElementById('retryVerifyModal').style.display = 'none';
+}
+
+function handleVerificationSuccess(result) {
+  closeModal(); // hide email modal
+
+  if (result.redirectUrl) {
+    window.location.href = result.redirectUrl;
+    return;
+  }
+
+  if (result.credentials) {
+    // show credentials modal as fallback
+    document.getElementById('displayUsername').textContent = result.credentials.username;
+    document.getElementById('displayPassword').textContent = result.credentials.password;
+    document.getElementById('credentialsModal').style.display = 'flex';
+  } else {
+    alert('Payment verified but no credentials were returned. Please check your email.');
+  }
+}
+
+async function verifyPayment(payload) {
+  lastVerificationPayload = payload;
+
+  // show loading while verifying
+  document.getElementById('loadingModal').style.display = 'flex';
+
+  try {
+    const response = await fetch('/api/verify-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+    document.getElementById('loadingModal').style.display = 'none';
+
+    if (result.success) {
+      handleVerificationSuccess(result);
+      return;
+    }
+
+    if (result.pending) {
+      showRetryModal(result.message || 'Payment is still processing. Please retry verification shortly.');
+      return;
+    }
+
+    showRetryModal(result.error || 'Payment verification failed. Please retry in a moment.');
+  } catch (err) {
+    document.getElementById('loadingModal').style.display = 'none';
+    console.error('Verification error:', err);
+    showRetryModal('Verification failed due to a network issue. Please retry.');
+  }
+}
+
+function retryVerifyPayment() {
+  if (!lastVerificationPayload) {
+    alert('No pending verification found. Please contact support or use manual verification.');
+    return;
+  }
+  closeRetryModal();
+  verifyPayment(lastVerificationPayload);
+}
+
 async function processPayment() {
   if (!selectedPlan || !selectedPlan.plan_type) {
     alert('No plan selected or invalid plan data');
@@ -43,42 +118,11 @@ async function processPayment() {
 
     // Inline callback → verify on server
     const handlePaymentCallback = function (resp) {
-      // show loading while verifying
-      document.getElementById('loadingModal').style.display = 'flex';
-
-      fetch('/api/verify-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reference: resp.reference,
-          email: customerEmail,
-          planType: selectedPlan.plan_type,
-          amount: parseFloat(selectedPlan.amount)
-        })
-      })
-      .then(r => r.json())
-      .then(result => {
-        document.getElementById('loadingModal').style.display = 'none';
-
-        if (result.success) {
-          closeModal(); // hide email modal
-
-          if (result.redirectUrl) {
-            window.location.href = result.redirectUrl;
-          } else {
-            // show credentials modal as fallback
-            document.getElementById('displayUsername').textContent = result.credentials.username;
-            document.getElementById('displayPassword').textContent = result.credentials.password;
-            document.getElementById('credentialsModal').style.display = 'flex';
-          }
-        } else {
-          alert('Error: ' + (result.error || 'Failed to fetch credentials'));
-        }
-      })
-      .catch(err => {
-        document.getElementById('loadingModal').style.display = 'none';
-        console.error('Verification error:', err);
-        alert('Payment verification failed');
+      verifyPayment({
+        reference: resp.reference,
+        email: customerEmail,
+        planType: selectedPlan.plan_type,
+        amount: parseFloat(selectedPlan.amount)
       });
     };
 
