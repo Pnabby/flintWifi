@@ -1,4 +1,4 @@
-require('dotenv').config({path:'../.env'});
+ï»¿require('dotenv').config(/*{path:'../.env'}*/);
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
@@ -53,7 +53,7 @@ app.get('/api/plans', async (req, res) => {
 });
 
 
-// /api/init-payment  — PREP ONLY (Inline flow)
+// /api/init-payment  ï¿½ PREP ONLY (Inline flow)
 app.post('/api/init-payment', async (req, res) => {
   const { email, planType } = req.body;
 
@@ -80,7 +80,7 @@ app.post('/api/init-payment', async (req, res) => {
     const payload = {
       key: process.env.PAYSTACK_PUBLIC_KEY,              // pk_test_* / pk_live_*
       email,
-      amount: 10 ,//Math.round(plan.amount * 100),             // pesewas/kobo
+      amount: Math.round(plan.amount * 100),             // pesewas/kobo
       reference,
       split_code: process.env.PAYSTACK_SPLIT_CODE || null,
       metadata: { plan_type: planType, custom_reference: reference }
