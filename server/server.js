@@ -1,4 +1,4 @@
-﻿require('dotenv').config({path:'../.env'});
+require('dotenv').config(/*{path:'../.env'}*/);
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
@@ -34,108 +34,7 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_APP_PASSWORD,
   },
-  pool: true,
-  maxConnections: 3,
-  maxMessages: 100,
-  rateDelta: 1000,
-  rateLimit: 5,
 });
-
-const EMAIL_FROM = process.env.EMAIL_FROM || process.env.EMAIL_USER;
-
-transporter.verify((err) => {
-  if (err) {
-    console.error('Email transporter not ready:', err);
-  } else {
-    console.log('Email transporter ready');
-  }
-});
-
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const buildCredentialsEmail = ({ planType, username, password, reference }) => {
-  const subject = 'Your Flint WiFi Access Details';
-  const planLine = planType ? `<p style="margin:0 0 8px;">Plan: <strong>${planType}</strong></p>` : '';
-  const refLine = reference ? `<p style="margin:0 0 8px;">Reference: <strong>${reference}</strong></p>` : '';
-
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f8;padding:24px;">
-      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;">
-        <tr>
-          <td style="padding:20px 24px;background:#0a3d62;color:#ffffff;">
-            <h1 style="margin:0;font-size:20px;letter-spacing:0.3px;">Flint WiFi</h1>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:24px;">
-            <p style="margin:0 0 12px;font-size:16px;">Hello,</p>
-            <p style="margin:0 0 16px;color:#4a4a4a;">Your payment has been confirmed. Here are your WiFi access details:</p>
-            ${planLine}
-            ${refLine}
-            <div style="border:1px solid #e6e8eb;border-radius:6px;padding:16px;background:#fafbfc;">
-              <p style="margin:0 0 8px;font-size:14px;color:#666;">Username</p>
-              <p style="margin:0 0 16px;font-size:18px;font-weight:bold;color:#0a3d62;">${username}</p>
-              <p style="margin:0 0 8px;font-size:14px;color:#666;">Password</p>
-              <p style="margin:0;font-size:18px;font-weight:bold;color:#0a3d62;">${password}</p>
-            </div>
-            <p style="margin:16px 0 0;color:#4a4a4a;">If you have any issues connecting, reply to this email and we will help.</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:16px 24px;background:#f0f2f5;color:#7a7a7a;font-size:12px;">
-            This email was sent by Flint WiFi.
-          </td>
-        </tr>
-      </table>
-    </div>
-  `;
-
-  const text = [
-    'Hello,',
-    '',
-    'Your payment has been confirmed. Here are your WiFi access details:',
-    planType ? `Plan: ${planType}` : null,
-    reference ? `Reference: ${reference}` : null,
-    `Username: ${username}`,
-    `Password: ${password}`,
-    '',
-    'If you have any issues connecting, reply to this email and we will help.',
-    '',
-    'Flint WiFi'
-  ].filter(Boolean).join('\n');
-
-  return { subject, html, text };
-};
-
-const sendMailWithRetry = async (mailOptions, { retries = 2, delayMs = 1000 } = {}) => {
-  let lastError;
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    try {
-      return await transporter.sendMail(mailOptions);
-    } catch (err) {
-      lastError = err;
-      if (attempt >= retries) throw err;
-      const backoff = delayMs * Math.pow(2, attempt);
-      await wait(backoff);
-    }
-  }
-  throw lastError;
-};
-
-const sendCredentialsEmail = async ({ to, planType, username, password, reference }) => {
-  const { subject, html, text } = buildCredentialsEmail({ planType, username, password, reference });
-  return sendMailWithRetry(
-    {
-      from: `Flint WiFi <${EMAIL_FROM}>`,
-      to,
-      subject,
-      html,
-      text,
-      replyTo: EMAIL_FROM,
-    },
-    { retries: 3, delayMs: 1000 }
-  );
-};
 
 // API: Get available plans
 app.get('/api/plans', async (req, res) => {
@@ -219,15 +118,6 @@ app.post('/api/verify-payment', async (req, res) => {
       return res.status(400).json({ error: "Payment verification failed" });
     }
 
-    const tx = paystackData.data;
-    if (!tx || tx.status !== 'success') {
-      return res.status(202).json({
-        pending: true,
-        message: `Payment is ${tx?.status || 'pending'}. Please retry verification shortly.`,
-        reference
-      });
-    }
-
     // Fetch credentials from Supabase
     const { data: credentials, error: processError } = await supabase.rpc(
       'process_transaction_and_delete_login',
@@ -242,18 +132,27 @@ app.post('/api/verify-payment', async (req, res) => {
     if (processError) throw processError;
 
     // Send email with credentials
+    const mailOptions = {
+      from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
+      to: email,
+      subject: 'Your WiFi Credentials',
+      html: `
+        <h1>Your WiFi Login Details</h1>
+        <p>Plan: <strong>${planType}</strong></p>
+        <p><strong>Username:</strong> ${credentials[0].username}</p>
+        <p><strong>Password:</strong> ${credentials[0].password}</p>
+        <br>
+        <p>Thank you for choosing Flint WiFi!</p>
+      `,
+    };
+
     try {
-      const info = await sendCredentialsEmail({
-        to: email,
-        planType,
-        username: credentials[0].username,
-        password: credentials[0].password,
-        reference
-      });
-      console.log('Email sent:', info.messageId);
+      const info = await transporter.sendMail(mailOptions);
+      console.log('✅ Email sent:', info.messageId);
     } catch (emailError) {
-      console.error('Failed to send email:', emailError);
+      console.error('❌ Failed to send email:', emailError);
     }
+
     res.json({
       success: true,
       credentials: credentials[0],
@@ -340,18 +239,26 @@ app.post('/api/manual-verify', async (req, res) => {
       if (processError) throw processError;
 
       // 5) Email credentials
+      const mailOptions = {
+        from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
+        to: customerEmail,
+        subject: 'Your WiFi Credentials',
+        html: `
+          <h1>Your WiFi Login Details</h1>
+          <p>Plan: <strong>${planType}</strong></p>
+          <p><strong>Username:</strong> ${credentials[0].username}</p>
+          <p><strong>Password:</strong> ${credentials[0].password}</p>
+          <br>
+          <p>Thank you for choosing Flint WiFi!</p>
+        `,
+      };
       try {
-        const info = await sendCredentialsEmail({
-          to: customerEmail,
-          planType,
-          username: credentials[0].username,
-          password: credentials[0].password,
-          reference
-        });
-        console.log('Email sent:', info.messageId);
+        const info = await transporter.sendMail(mailOptions);
+        console.log('✅ Email sent:', info.messageId);
       } catch (emailError) {
-        console.error('Failed to send email:', emailError);
+        console.error('❌ Failed to send email:', emailError);
       }
+
       return res.json({
         status: 'processed',
         credentials: credentials?.[0],
@@ -425,18 +332,26 @@ app.post('/api/manual-verify', async (req, res) => {
       );
       if (processError) throw processError;
 
+      const mailOptions = {
+        from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
+        to: email,
+        subject: 'Your WiFi Credentials',
+        html: `
+          <h1>Your WiFi Login Details</h1>
+          <p>Plan: <strong>${derivedPlanType}</strong></p>
+          <p><strong>Username:</strong> ${credentials[0].username}</p>
+          <p><strong>Password:</strong> ${credentials[0].password}</p>
+          <br>
+          <p>Thank you for choosing Flint WiFi!</p>
+        `,
+      };
       try {
-        const info = await sendCredentialsEmail({
-          to: email,
-          planType: derivedPlanType,
-          username: credentials[0].username,
-          password: credentials[0].password,
-          reference: transaction.reference
-        });
-        console.log('Email sent:', info.messageId);
+        const info = await transporter.sendMail(mailOptions);
+        console.log('✅ Email sent:', info.messageId);
       } catch (emailError) {
-        console.error('Failed to send email:', emailError);
+        console.error('❌ Failed to send email:', emailError);
       }
+
       return res.json({
         status: 'processed',
         credentials: credentials?.[0],
@@ -473,88 +388,6 @@ app.post('/api/manual-verify', async (req, res) => {
 });
 
 
-// API: Retrieve credentials for processed payment
-app.post('/api/retrieve-credentials', async (req, res) => {
-  const { reference, email } = req.body;
-
-  try {
-    if (!reference || !reference.trim() || !email || !email.trim()) {
-      return res.status(400).json({ error: "Reference and email are required" });
-    }
-
-    const normalizedReference = reference.trim();
-    const normalizedEmail = email.trim();
-
-    const { data: transaction, error: txError } = await supabase
-      .from('Transactions')
-      .select('*')
-      .eq('payment_reference', normalizedReference)
-      .eq('customer_email', normalizedEmail)
-      .maybeSingle();
-
-    if (txError) throw txError;
-
-    if (!transaction) {
-      return res.status(404).json({ error: "No payment found for that reference and email" });
-    }
-
-    const credentialUsername = transaction.credential_username || transaction.username;
-    let username = credentialUsername;
-    let password = transaction.credential_password || transaction.password;
-    let planType = transaction.plan_type || transaction.planType;
-
-    if (!username || !password) {
-      const { data: soldLogin, error: soldError } = await supabase
-        .from('SoldLogins')
-        .select('username, password, plan_type')
-        .eq('payment_reference', normalizedReference)
-        .eq('customer_email', normalizedEmail)
-        .maybeSingle();
-
-      if (soldError) throw soldError;
-
-      username = username || soldLogin?.username;
-      password = password || soldLogin?.password;
-      planType = planType || soldLogin?.plan_type;
-    }
-
-    if (!username || !password) {
-      if (!credentialUsername) {
-        return res.status(404).json({
-          error: "Credentials are not available for this payment. Please contact support."
-        });
-      }
-
-      const { data: login, error: loginError } = await supabase
-        .from('Logins')
-        .select('username, password')
-        .eq('username', credentialUsername)
-        .maybeSingle();
-
-      if (loginError) throw loginError;
-
-      username = username || login?.username;
-      password = password || login?.password;
-    }
-
-    if (!username || !password) {
-      return res.status(404).json({
-        error: "Credentials are not available for this payment. Please contact support."
-      });
-    }
-
-    res.json({
-      success: true,
-      credentials: { username, password },
-      reference: normalizedReference
-    });
-  } catch (err) {
-    console.error('Retrieve credentials error:', err);
-    res.status(500).json({ error: "Failed to retrieve credentials" });
-  }
-});
-
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
-
