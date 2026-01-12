@@ -1,6 +1,5 @@
 let selectedPlan = null;
 let availablePlans = [];
-let manualVerifyMode = 'reference';
 
 // Fetch plans from backend when page loads
 document.addEventListener('DOMContentLoaded', async () => {
@@ -136,45 +135,6 @@ function selectPlan(planType) {
   document.getElementById('emailModal').style.display = 'flex';
 }
 
-function setVerifyMode(mode) {
-  manualVerifyMode = mode;
-
-  const tabRef = document.getElementById('tab-ref');
-  const tabEmail = document.getElementById('tab-email');
-  const panelRef = document.getElementById('panel-ref');
-  const panelEmail = document.getElementById('panel-email');
-
-  // toggle tab active state
-  if (mode === 'reference') {
-    tabRef.classList.add('active');
-    tabRef.setAttribute('aria-selected', 'true');
-    tabEmail.classList.remove('active');
-    tabEmail.setAttribute('aria-selected', 'false');
-
-    panelRef.classList.add('active');
-    panelRef.hidden = false;
-    panelEmail.classList.remove('active');
-    panelEmail.hidden = true;
-
-    // Clear the other field to avoid accidental submission
-    document.getElementById('verifyEmail').value = '';
-  } else {
-    tabEmail.classList.add('active');
-    tabEmail.setAttribute('aria-selected', 'true');
-    tabRef.classList.remove('active');
-    tabRef.setAttribute('aria-selected', 'false');
-
-    panelEmail.classList.add('active');
-    panelEmail.hidden = false;
-    panelRef.classList.remove('active');
-    panelRef.hidden = true;
-
-    // Clear the other field to avoid accidental submission
-    document.getElementById('verifyReference').value = '';
-  }
-}
-
-
 function closeModal() {
   document.getElementById('emailModal').style.display = 'none';
 }
@@ -188,8 +148,6 @@ function openVerifyModal() {
   document.getElementById('verifyEmail').value = '';
   document.getElementById('verifyReference').value = '';
   document.getElementById('manualVerifyResult').innerHTML = '';
-
-  setVerifyMode('reference');
 }
 
 
@@ -202,12 +160,11 @@ async function submitManualVerify() {
   const email = document.getElementById('verifyEmail').value.trim();
   const reference = document.getElementById('verifyReference').value.trim();
 
-  // Enforce single-mode input
-  if (manualVerifyMode === 'reference' && !reference) {
+  if (!reference) {
     alert('Enter a Payment Reference.');
     return;
   }
-  if (manualVerifyMode === 'email' && !email) {
+  if (!email) {
     alert('Enter your Email.');
     return;
   }
@@ -216,17 +173,11 @@ async function submitManualVerify() {
   resultDiv.innerHTML = '<div class="loader"></div><p>Checking payment status...</p>';
   closeVerifyModal();
 
-  // Build the payload based on mode
-  const payload =
-    manualVerifyMode === 'reference'
-      ? (email ? { reference, email } : { reference }) // email optional here, helps fallback if metadata lacked email
-      : { email };
-
   try {
     const response = await fetch('/api/manual-verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ reference, email })
     });
 
     const result = await response.json();

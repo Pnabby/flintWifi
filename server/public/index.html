@@ -6,46 +6,6 @@
     <title>Flint WiFi Plans</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        .tabs {
-        display: flex;
-        gap: 0.5rem;
-        margin: 0.5rem 0 1rem 0;
-        }
-
-        .tab {
-        flex: 1;
-        background: #e9ecef;
-        border: 1px solid #dee2e6;
-        border-radius: 999px;
-        padding: 0.6rem 1rem;
-        cursor: pointer;
-        font-weight: 500;
-        transition: all 0.2s ease;
-        }
-
-        .tab:hover {
-        filter: brightness(0.98);
-        }
-
-        .tab.active {
-        background: var(--primary);
-        color: #fff;
-        border-color: var(--primary);
-        box-shadow: 0 5px 15px rgba(67, 97, 238, 0.25);
-        }
-
-        .tabpanel {
-        margin-top: 0.5rem;
-        }
-
-        .tabpanel[hidden] {
-        display: none;
-        }
-
-        .tabpanel.active {
-        display: block;
-        }
-
         .plan--disabled {
         opacity: 0.6;
         filter: grayscale(0.3);
@@ -362,6 +322,16 @@
             <p class="subtitle">For more information, contact 0503405200</p>
             <p class="subtitle">Designed by <span style="color: blue;">Paul</span> & <span style="color: blue;">Casper</span></p>
         </header>
+
+        <div class="manual-verify" style="margin-top: 1.5rem; text-align: center;">
+            <h3>Need help retrieving your WiFi login?</h3>
+            <p>If your payment was completed but you did not receive your credentials, use the secure verification below.</p>
+            <p style="color: var(--gray); font-size: 0.95rem;">Have your payment reference and email ready.</p>
+            <button onclick="openVerifyModal()" class="btn" style="width: auto; padding: 0.8rem 2rem;">
+                Verify payment and retrieve credentials
+            </button>
+            <div id="manualVerifyResult" style="margin-top: 1rem;"></div>
+        </div>
         
         <div class="plans-container">
             <div class="plan">
@@ -461,37 +431,20 @@
 
     <!-- Manual Verify Modal -->
     <div id="manualVerifyModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
+        <div class="modal-content">
+            <div class="modal-header">
         <h2 class="modal-title">Check Payment Status</h2>
         <p class="modal-description">
-            Verify using <strong>Payment Reference</strong> or <strong>Email</strong> (one method at a time).
+            Enter both your <strong>Payment Reference</strong> and <strong>Email</strong> to verify.
         </p>
         </div>
-
-        <!-- Tabs -->
-        <div class="tabs" role="tablist" aria-label="Manual verification method">
-        <button id="tab-ref" class="tab active" role="tab" aria-selected="true" aria-controls="panel-ref" onclick="setVerifyMode('reference')">
-            By Reference
-        </button>
-        <button id="tab-email" class="tab" role="tab" aria-selected="false" aria-controls="panel-email" onclick="setVerifyMode('email')">
-            By Email
-        </button>
-        </div>
-
-        <!-- Panels -->
-        <div id="panel-ref" class="tabpanel active" role="tabpanel" aria-labelledby="tab-ref">
         <div class="form-group">
             <label for="verifyReference">Check email for payment Reference (e.g., daily-123456789).</label>
             <input type="text" id="verifyReference" class="form-control" placeholder="your-reference-here">
         </div>
-        </div>
-
-        <div id="panel-email" class="tabpanel" role="tabpanel" aria-labelledby="tab-email" hidden>
         <div class="form-group">
             <label for="verifyEmail">Email Address</label>
             <input type="email" id="verifyEmail" class="form-control" placeholder="your@email.com">
-        </div>
         </div>
 
         <div class="modal-footer">
@@ -502,15 +455,6 @@
     </div>
 
 
-
-    <div class="manual-verify" style="margin-top: 3rem; text-align: center;">
-        <h3>Having issues?</h3>
-        <p>If you've paid but didn't receive credentials, check your transaction status</p>
-        <button onclick="openVerifyModal()" class="btn" style="width: auto; padding: 0.8rem 2rem;">
-            Check Payment Status
-        </button>
-        <div id="manualVerifyResult" style="margin-top: 1rem;"></div>
-    </div>
 
     <!-- Load JavaScript files -->
     <script src="https://js.paystack.co/v1/inline.js"></script>

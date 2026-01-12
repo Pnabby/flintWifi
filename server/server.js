@@ -1,4 +1,4 @@
-require('dotenv').config(/*{path:'../.env'}*/);
+require('dotenv').config({path:'../.env'});
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
@@ -53,7 +53,7 @@ app.get('/api/plans', async (req, res) => {
 });
 
 
-// /api/init-payment  — PREP ONLY (Inline flow)
+// /api/init-payment  � PREP ONLY (Inline flow)
 app.post('/api/init-payment', async (req, res) => {
   const { email, planType } = req.body;
 
@@ -80,7 +80,7 @@ app.post('/api/init-payment', async (req, res) => {
     const payload = {
       key: process.env.PAYSTACK_PUBLIC_KEY,              // pk_test_* / pk_live_*
       email,
-      amount: Math.round(plan.amount * 100),             // pesewas/kobo
+      amount: 10 ,//Math.round(plan.amount * 100),             // pesewas/kobo
       reference,
       split_code: process.env.PAYSTACK_SPLIT_CODE || null,
       metadata: { plan_type: planType, custom_reference: reference }
@@ -148,9 +148,9 @@ app.post('/api/verify-payment', async (req, res) => {
 
     try {
       const info = await transporter.sendMail(mailOptions);
-      console.log('✅ Email sent:', info.messageId);
+      console.log('? Email sent:', info.messageId);
     } catch (emailError) {
-      console.error('❌ Failed to send email:', emailError);
+      console.error('? Failed to send email:', emailError);
     }
 
     res.json({
@@ -170,80 +170,100 @@ app.post('/api/manual-verify', async (req, res) => {
   const { email, reference } = req.body;
 
   try {
-    // --- Path A: reference provided (fast path) ---
-    if (reference && reference.trim()) {
-      // 1) Verify specific transaction on Paystack
-      const verifyResp = await fetch(
-        `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
-        { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
-      );
-      const verifyData = await verifyResp.json();
+    if (!reference || !reference.trim() || !email || !email.trim()) {
+      return res.status(400).json({ error: "Provide both your payment reference and email" });
+    }
 
-      if (!verifyData.status || !verifyData.data) {
-        return res.status(404).json({ error: "Payment not found for this reference" });
-      }
+    // 1) Verify specific transaction on Paystack
+    const verifyResp = await fetch(
+      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
+    );
+    const verifyData = await verifyResp.json();
 
-      const tx = verifyData.data;
+    if (!verifyData.status || !verifyData.data) {
+      return res.status(404).json({ error: "Payment not found for this reference" });
+    }
 
-      // Only proceed on successful charge
-      if (tx.status !== 'success') {
-        return res.json({
-          status: 'unprocessed',
-          message: `Transaction is ${tx.status}.`,
-          reference
-        });
-      }
+    const tx = verifyData.data;
 
-      // 2) Avoid double-processing
-      const { data: existingTx, error: txError } = await supabase
-        .from('Transactions')
-        .select('*')
-        .eq('payment_reference', reference)
-        .maybeSingle();
+    if (tx.customer?.email && tx.customer.email.toLowerCase() !== email.trim().toLowerCase()) {
+      return res.status(400).json({ error: "Email does not match this payment reference" });
+    }
 
-      if (txError) throw txError;
-      if (existingTx) {
-        return res.json({
-          status: 'exists',
-          message: "This payment was already processed",
-          reference
-        });
-      }
+    // Only proceed on successful charge
+    if (tx.status !== 'success') {
+      return res.json({
+        status: 'unprocessed',
+        message: `Transaction is ${tx.status}.`,
+        reference
+      });
+    }
 
-      // 3) Derive plan & amount; prefer metadata, fallback to ref prefix
-      const planType =
-        tx.metadata?.plan_type ??
-        (reference.includes('-') ? reference.split('-')[0] : null);
+    // 2) Avoid double-processing
+    const { data: existingTx, error: txError } = await supabase
+      .from('Transactions')
+      .select('*')
+      .eq('payment_reference', reference)
+      .maybeSingle();
 
-      const amount = tx.amount / 100;  // kobo/pesewas → base unit
+    if (txError) throw txError;
+    if (existingTx) {
+      let existingCredentials = null;
 
-      // Choose the best email: explicit body > Paystack customer email
-      const customerEmail = email?.trim() || tx.customer?.email;
-      if (!customerEmail) {
-        return res.status(400).json({ error: "Could not determine customer email" });
-      }
-      if (!planType) {
-        return res.status(400).json({ error: "Could not determine plan type" });
-      }
+      if (existingTx.credential_username) {
+        const { data: soldLogin, error: soldError } = await supabase
+          .from('SoldLogins')
+          .select('username, password')
+          .eq('username', existingTx.credential_username)
+          .maybeSingle();
 
-      // 4) Process in Supabase (creates tx row, returns credentials, deletes login)
-      const { data: credentials, error: processError } = await supabase.rpc(
-        'process_transaction_and_delete_login',
-        {
-          p_payment_ref: reference,
-          p_customer_email: customerEmail,
-          p_plan_type: planType,
-          p_amount: amount
+        if (soldError) throw soldError;
+        if (soldLogin) {
+          existingCredentials = {
+            username: soldLogin.username,
+            password: soldLogin.password
+          };
         }
-      );
-      if (processError) throw processError;
+      }
 
-      // 5) Email credentials
-      const mailOptions = {
-        from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
-        to: customerEmail,
-        subject: 'Your WiFi Credentials',
-        html: `
+      return res.json({
+        status: 'exists',
+        message: "This payment was already processed",
+        reference,
+        credentials: existingCredentials
+      });
+    }
+
+    // 3) Derive plan & amount; prefer metadata, fallback to ref prefix
+    const planType =
+      tx.metadata?.plan_type ??
+      (reference.includes('-') ? reference.split('-')[0] : null);
+
+    const amount = tx.amount / 100;  // kobo/pesewas base unit
+
+    if (!planType) {
+      return res.status(400).json({ error: "Could not determine plan type" });
+    }
+
+    // 4) Process in Supabase (creates tx row, returns credentials, deletes login)
+    const { data: credentials, error: processError } = await supabase.rpc(
+      'process_transaction_and_delete_login',
+      {
+        p_payment_ref: reference,
+        p_customer_email: email.trim(),
+        p_plan_type: planType,
+        p_amount: amount
+      }
+    );
+    if (processError) throw processError;
+
+    // 5) Email credentials
+    const mailOptions = {
+      from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
+      to: email.trim(),
+      subject: 'Your WiFi Credentials',
+      html: `
           <h1>Your WiFi Login Details</h1>
           <p>Plan: <strong>${planType}</strong></p>
           <p><strong>Username:</strong> ${credentials[0].username}</p>
@@ -251,135 +271,19 @@ app.post('/api/manual-verify', async (req, res) => {
           <br>
           <p>Thank you for choosing Flint WiFi!</p>
         `,
-      };
-      try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log('✅ Email sent:', info.messageId);
-      } catch (emailError) {
-        console.error('❌ Failed to send email:', emailError);
-      }
-
-      return res.json({
-        status: 'processed',
-        credentials: credentials?.[0],
-        reference,
-        message: "Payment processed successfully"
-      });
+    };
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      console.log('? Email sent:', info.messageId);
+    } catch (emailError) {
+      console.error('? Failed to send email:', emailError);
     }
 
-    // --- Path B: email-only flow (your current logic, unchanged except small cleanup) ---
-    if (!email || !email.trim()) {
-      return res.status(400).json({ error: "Provide a payment reference or your email" });
-    }
-
-    // Step 1: Fetch Paystack customer by email
-    const customerResponse = await fetch(
-      `https://api.paystack.co/customer/${encodeURIComponent(email)}`,
-      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
-    );
-    const customerData = await customerResponse.json();
-
-    if (!customerData.status || !customerData.data) {
-      return res.status(404).json({ error: "Customer not found on Paystack" });
-    }
-
-    const customerId = customerData.data.id;
-
-    // Step 2: Fetch last 3 transactions for this customer
-    const txResponse = await fetch(
-      `https://api.paystack.co/transaction?customer=${customerId}&perPage=3`,
-      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
-    );
-    const txData = await txResponse.json();
-
-    if (!txData.status || !txData.data || txData.data.length === 0) {
-      return res.status(404).json({ error: "No transactions found for this customer" });
-    }
-
-    // Calculate date 2 days ago
-    const twoDaysAgo = new Date();
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-
-    // Step 3: Check recent successful, not-yet-processed tx
-    for (const transaction of txData.data) {
-      if (transaction.status !== 'success') continue;
-
-      const transactionDate = new Date(transaction.paid_at || transaction.created_at);
-      if (transactionDate < twoDaysAgo) continue;
-
-      const { data: existingTx, error: txError } = await supabase
-        .from('Transactions')
-        .select('*')
-        .eq('payment_reference', transaction.reference)
-        .maybeSingle();
-
-      if (txError) throw txError;
-      if (existingTx) continue;
-
-      const derivedPlanType =
-        transaction.metadata?.plan_type ??
-        (transaction.reference.includes('-') ? transaction.reference.split('-')[0] : null);
-      const derivedAmount = transaction.amount / 100;
-
-      const { data: credentials, error: processError } = await supabase.rpc(
-        'process_transaction_and_delete_login',
-        {
-          p_payment_ref: transaction.reference,
-          p_customer_email: email,
-          p_plan_type: derivedPlanType,
-          p_amount: derivedAmount
-        }
-      );
-      if (processError) throw processError;
-
-      const mailOptions = {
-        from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
-        to: email,
-        subject: 'Your WiFi Credentials',
-        html: `
-          <h1>Your WiFi Login Details</h1>
-          <p>Plan: <strong>${derivedPlanType}</strong></p>
-          <p><strong>Username:</strong> ${credentials[0].username}</p>
-          <p><strong>Password:</strong> ${credentials[0].password}</p>
-          <br>
-          <p>Thank you for choosing Flint WiFi!</p>
-        `,
-      };
-      try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log('✅ Email sent:', info.messageId);
-      } catch (emailError) {
-        console.error('❌ Failed to send email:', emailError);
-      }
-
-      return res.json({
-        status: 'processed',
-        credentials: credentials?.[0],
-        reference: transaction.reference,
-        message: "Payment processed successfully"
-      });
-    }
-
-    // If no valid transactions found, check if processed recently
-    const { data: recentProcessedTx } = await supabase
-      .from('Transactions')
-      .select('payment_reference, created_at')
-      .eq('customer_email', email)
-      .gte('created_at', twoDaysAgo.toISOString())
-      .limit(1);
-
-    if (recentProcessedTx && recentProcessedTx.length > 0) {
-      return res.json({
-        status: 'exists',
-        message: "Your recent payment was already processed",
-        reference: recentProcessedTx[0].payment_reference
-      });
-    }
-
-    res.json({
-      status: 'unprocessed',
-      message: "No successful unprocessed payments found in the last 2 days",
-      reference: null
+    return res.json({
+      status: 'processed',
+      credentials: credentials?.[0],
+      reference,
+      message: "Payment processed successfully"
     });
   } catch (err) {
     console.error('Manual verification error:', err);
@@ -387,7 +291,8 @@ app.post('/api/manual-verify', async (req, res) => {
   }
 });
 
-
 // Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`? Server running on port ${PORT}`));
+
+
