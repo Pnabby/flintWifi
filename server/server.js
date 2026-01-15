@@ -107,7 +107,10 @@ app.post('/api/init-payment', async (req, res) => {
       return res.status(403).json({ error: "This plan is currently disabled" });
     }
 
-    const reference = `${planType}-${Math.floor(Math.random() * 1e9)}`;
+    const planKey = String(planType || '').slice(0, 5).toLowerCase();
+    const timePart = Date.now().toString(36).slice(-6);
+    const randPart = Math.floor(Math.random() * 1e4).toString(36).padStart(3, '0');
+    const reference = `${planKey}-${timePart}${randPart}`;
 
     const payload = {
       key: process.env.PAYSTACK_PUBLIC_KEY,              // pk_test_* / pk_live_*
