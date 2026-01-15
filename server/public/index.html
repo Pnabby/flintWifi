@@ -37,6 +37,12 @@
         border-radius: 8px;
         text-align: left;
         }
+
+        #manualVerifyResult:empty {
+        display: none;
+        padding: 0;
+        background: transparent;
+        }
         .loader {
             border: 5px solid #f3f3f3;
             border-top: 5px solid #4361ee;
@@ -323,16 +329,6 @@
             <p class="subtitle">Designed by <span style="color: blue;">Paul</span> & <span style="color: blue;">Casper</span></p>
         </header>
 
-        <div class="manual-verify" style="margin-top: 1.5rem; text-align: center;">
-            <h3>Need help retrieving your WiFi login?</h3>
-            <p>If your payment was completed but you did not receive your credentials, use the secure verification below.</p>
-            <p style="color: var(--gray); font-size: 0.95rem;">Have your payment reference and email ready.</p>
-            <button onclick="openVerifyModal()" class="btn" style="width: auto; padding: 0.8rem 2rem;">
-                Verify payment and retrieve credentials
-            </button>
-            <div id="manualVerifyResult" style="margin-top: 1rem;"></div>
-        </div>
-        
         <div class="plans-container">
             <div class="plan">
                 <div class="plan-header">
@@ -376,6 +372,16 @@
                 <button class="btn" onclick="selectPlan('monthly')">Get Monthly Plan</button>
             </div>
         </div>
+
+        <div class="manual-verify" style="margin-top: 2rem; text-align: center;">
+            <h3>Need help retrieving your WiFi login?</h3>
+            <p>If your payment was completed but you did not receive your credentials, use the secure verification below.</p>
+            <p style="color: var(--gray); font-size: 0.95rem;">Have your payment reference and email ready.</p>
+            <button onclick="openVerifyModal()" class="btn" style="width: auto; padding: 0.8rem 2rem;">
+                Verify payment and retrieve credentials
+            </button>
+            <div id="manualVerifyResult" style="margin-top: 1rem;"></div>
+        </div>
     </div>
 
     <!-- Email Modal -->
@@ -416,6 +422,23 @@
             </p>
             <div class="modal-footer" style="justify-content: center;">
                 <button class="btn" onclick="closeCredentialsModal()">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Verification Retry Modal -->
+    <div id="verifyRetryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Verification did not complete</h2>
+                <p class="modal-description" id="verifyRetryMessage">
+                    We could not verify your payment yet. Please try again.
+                </p>
+                <p class="modal-description" id="verifyRetryReference" style="color: var(--gray); font-size: 0.95rem;"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeVerifyRetryModal()">Close</button>
+                <button class="btn" onclick="retryVerifyPayment()">Retry verification</button>
             </div>
         </div>
     </div>

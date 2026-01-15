@@ -4,9 +4,14 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
 const path = require('path');
+const dns = require('dns');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
+
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
 
 // Middleware
 app.use(cors());
@@ -35,6 +40,33 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_APP_PASSWORD,
   },
 });
+
+function sendCredentialsEmail({ email, planType, credentials }) {
+  if (!email || !credentials) return;
+
+  const mailOptions = {
+    from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
+    to: email,
+    subject: 'Your WiFi Credentials',
+    html: `
+      <h1>Your WiFi Login Details</h1>
+      <p>Plan: <strong>${planType}</strong></p>
+      <p><strong>Username:</strong> ${credentials.username}</p>
+      <p><strong>Password:</strong> ${credentials.password}</p>
+      <br>
+      <p>Thank you for choosing Flint WiFi!</p>
+    `,
+  };
+
+  setImmediate(async () => {
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      console.log('? Email sent:', info.messageId);
+    } catch (emailError) {
+      console.error('? Failed to send email:', emailError);
+    }
+  });
+}
 
 // API: Get available plans
 app.get('/api/plans', async (req, res) => {
@@ -98,11 +130,41 @@ app.post('/api/init-payment', async (req, res) => {
 
 
 
+async function getCredentialsForReference(reference) {
+  const { data: existingTx, error: txError } = await supabase
+    .from('Transactions')
+    .select('credential_username')
+    .eq('payment_reference', reference)
+    .maybeSingle();
+
+  if (txError) throw txError;
+  if (!existingTx || !existingTx.credential_username) return null;
+
+  const { data: soldLogin, error: soldError } = await supabase
+    .from('SoldLogins')
+    .select('username, password')
+    .eq('username', existingTx.credential_username)
+    .maybeSingle();
+
+  if (soldError) throw soldError;
+  if (!soldLogin) return null;
+
+  return {
+    username: soldLogin.username,
+    password: soldLogin.password
+  };
+}
+
 // API: Verify payment & fetch WiFi credentials
 app.post('/api/verify-payment', async (req, res) => {
   const { reference, email, planType, amount } = req.body;
 
   try {
+    const parsedAmount = Number(amount);
+    if (!reference || !email || !planType || Number.isNaN(parsedAmount)) {
+      return res.status(400).json({ success: false, error: "Missing verification details" });
+    }
+
     // Verify with Paystack
     const paystackResponse = await fetch(
       `https://api.paystack.co/transaction/verify/${reference}`,
@@ -115,43 +177,60 @@ app.post('/api/verify-payment', async (req, res) => {
     const paystackData = await paystackResponse.json();
 
     if (!paystackData.status) {
-      return res.status(400).json({ error: "Payment verification failed" });
+      return res.status(400).json({ success: false, error: "Payment verification failed" });
+    }
+
+    if (!paystackData.data || paystackData.data.status !== 'success') {
+      const status = paystackData.data?.status || 'pending';
+      return res.status(409).json({
+        success: false,
+        retryable: true,
+        error: `Payment is ${status}. Please retry verification shortly.`
+      });
+    }
+
+    const existingCredentials = await getCredentialsForReference(reference);
+    if (existingCredentials) {
+      return res.json({
+        success: true,
+        credentials: existingCredentials,
+        redirectUrl: `/credentials.html?username=${encodeURIComponent(existingCredentials.username)}&password=${encodeURIComponent(existingCredentials.password)}`
+      });
     }
 
     // Fetch credentials from Supabase
-    const { data: credentials, error: processError } = await supabase.rpc(
-      'process_transaction_and_delete_login',
-      {
-        p_payment_ref: reference,
-        p_customer_email: email,
-        p_plan_type: planType,
-        p_amount: amount
-      }
-    );
+    let credentials = null;
+    try {
+      const { data: processedCredentials, error: processError } = await supabase.rpc(
+        'process_transaction_and_delete_login',
+        {
+          p_payment_ref: reference,
+          p_customer_email: email,
+          p_plan_type: planType,
+          p_amount: amount
+        }
+      );
 
-    if (processError) throw processError;
+      if (processError) throw processError;
+      credentials = processedCredentials;
+    } catch (processError) {
+      const fallbackCredentials = await getCredentialsForReference(reference);
+      if (fallbackCredentials) {
+        return res.json({
+          success: true,
+          credentials: fallbackCredentials,
+          redirectUrl: `/credentials.html?username=${encodeURIComponent(fallbackCredentials.username)}&password=${encodeURIComponent(fallbackCredentials.password)}`
+        });
+      }
+      throw processError;
+    }
 
     // Send email with credentials
-    const mailOptions = {
-      from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
-      to: email,
-      subject: 'Your WiFi Credentials',
-      html: `
-        <h1>Your WiFi Login Details</h1>
-        <p>Plan: <strong>${planType}</strong></p>
-        <p><strong>Username:</strong> ${credentials[0].username}</p>
-        <p><strong>Password:</strong> ${credentials[0].password}</p>
-        <br>
-        <p>Thank you for choosing Flint WiFi!</p>
-      `,
-    };
-
-    try {
-      const info = await transporter.sendMail(mailOptions);
-      console.log('? Email sent:', info.messageId);
-    } catch (emailError) {
-      console.error('? Failed to send email:', emailError);
-    }
+    sendCredentialsEmail({
+      email,
+      planType,
+      credentials: credentials[0]
+    });
 
     res.json({
       success: true,
@@ -174,9 +253,33 @@ app.post('/api/manual-verify', async (req, res) => {
       return res.status(400).json({ error: "Provide both your payment reference and email" });
     }
 
+    const trimmedReference = reference.trim();
+    const trimmedEmail = email.trim();
+
+    // 0) Check SoldLogins first (fast path)
+    const { data: soldLogin, error: soldError } = await supabase
+      .from('SoldLogins')
+      .select('username, password, payment_reference, customer_email')
+      .eq('payment_reference', trimmedReference)
+      .eq('customer_email', trimmedEmail)
+      .maybeSingle();
+
+    if (soldError) throw soldError;
+    if (soldLogin) {
+      return res.json({
+        status: 'exists',
+        message: "Credentials found for this payment",
+        reference: soldLogin.payment_reference,
+        credentials: {
+          username: soldLogin.username,
+          password: soldLogin.password
+        }
+      });
+    }
+
     // 1) Verify specific transaction on Paystack
     const verifyResp = await fetch(
-      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+      `https://api.paystack.co/transaction/verify/${encodeURIComponent(trimmedReference)}`,
       { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
     );
     const verifyData = await verifyResp.json();
@@ -187,7 +290,7 @@ app.post('/api/manual-verify', async (req, res) => {
 
     const tx = verifyData.data;
 
-    if (tx.customer?.email && tx.customer.email.toLowerCase() !== email.trim().toLowerCase()) {
+    if (tx.customer?.email && tx.customer.email.toLowerCase() !== trimmedEmail.toLowerCase()) {
       return res.status(400).json({ error: "Email does not match this payment reference" });
     }
 
@@ -196,49 +299,24 @@ app.post('/api/manual-verify', async (req, res) => {
       return res.json({
         status: 'unprocessed',
         message: `Transaction is ${tx.status}.`,
-        reference
+        reference: trimmedReference
       });
     }
 
-    // 2) Avoid double-processing
-    const { data: existingTx, error: txError } = await supabase
-      .from('Transactions')
-      .select('*')
-      .eq('payment_reference', reference)
-      .maybeSingle();
-
-    if (txError) throw txError;
-    if (existingTx) {
-      let existingCredentials = null;
-
-      if (existingTx.credential_username) {
-        const { data: soldLogin, error: soldError } = await supabase
-          .from('SoldLogins')
-          .select('username, password')
-          .eq('username', existingTx.credential_username)
-          .maybeSingle();
-
-        if (soldError) throw soldError;
-        if (soldLogin) {
-          existingCredentials = {
-            username: soldLogin.username,
-            password: soldLogin.password
-          };
-        }
-      }
-
+    const existingCredentials = await getCredentialsForReference(trimmedReference);
+    if (existingCredentials) {
       return res.json({
         status: 'exists',
         message: "This payment was already processed",
-        reference,
+        reference: trimmedReference,
         credentials: existingCredentials
       });
     }
 
-    // 3) Derive plan & amount; prefer metadata, fallback to ref prefix
+    // 2) Derive plan & amount; prefer metadata, fallback to ref prefix
     const planType =
       tx.metadata?.plan_type ??
-      (reference.includes('-') ? reference.split('-')[0] : null);
+      (trimmedReference.includes('-') ? trimmedReference.split('-')[0] : null);
 
     const amount = tx.amount / 100;  // kobo/pesewas base unit
 
@@ -246,43 +324,44 @@ app.post('/api/manual-verify', async (req, res) => {
       return res.status(400).json({ error: "Could not determine plan type" });
     }
 
-    // 4) Process in Supabase (creates tx row, returns credentials, deletes login)
-    const { data: credentials, error: processError } = await supabase.rpc(
-      'process_transaction_and_delete_login',
-      {
-        p_payment_ref: reference,
-        p_customer_email: email.trim(),
-        p_plan_type: planType,
-        p_amount: amount
-      }
-    );
-    if (processError) throw processError;
-
-    // 5) Email credentials
-    const mailOptions = {
-      from: `Flint WiFi <${process.env.EMAIL_FROM}>`,
-      to: email.trim(),
-      subject: 'Your WiFi Credentials',
-      html: `
-          <h1>Your WiFi Login Details</h1>
-          <p>Plan: <strong>${planType}</strong></p>
-          <p><strong>Username:</strong> ${credentials[0].username}</p>
-          <p><strong>Password:</strong> ${credentials[0].password}</p>
-          <br>
-          <p>Thank you for choosing Flint WiFi!</p>
-        `,
-    };
+    // 3) Process in Supabase (creates tx row, returns credentials, deletes login)
+    let credentials = null;
     try {
-      const info = await transporter.sendMail(mailOptions);
-      console.log('? Email sent:', info.messageId);
-    } catch (emailError) {
-      console.error('? Failed to send email:', emailError);
+      const { data: processedCredentials, error: processError } = await supabase.rpc(
+        'process_transaction_and_delete_login',
+        {
+          p_payment_ref: trimmedReference,
+          p_customer_email: trimmedEmail,
+          p_plan_type: planType,
+          p_amount: amount
+        }
+      );
+      if (processError) throw processError;
+      credentials = processedCredentials;
+    } catch (processError) {
+      const fallbackCredentials = await getCredentialsForReference(trimmedReference);
+      if (fallbackCredentials) {
+        return res.json({
+          status: 'exists',
+          message: "This payment was already processed",
+          reference: trimmedReference,
+          credentials: fallbackCredentials
+        });
+      }
+      throw processError;
     }
+
+    // 5) Email credentials (async, non-blocking)
+    sendCredentialsEmail({
+      email: trimmedEmail,
+      planType,
+      credentials: credentials?.[0]
+    });
 
     return res.json({
       status: 'processed',
       credentials: credentials?.[0],
-      reference,
+      reference: trimmedReference,
       message: "Payment processed successfully"
     });
   } catch (err) {

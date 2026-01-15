@@ -143,10 +143,10 @@ function closeCredentialsModal() {
   document.getElementById('credentialsModal').style.display = 'none';
 }
 
-function openVerifyModal() {
+function openVerifyModal(prefill = {}) {
   document.getElementById('manualVerifyModal').style.display = 'flex';
-  document.getElementById('verifyEmail').value = '';
-  document.getElementById('verifyReference').value = '';
+  document.getElementById('verifyEmail').value = prefill.email || '';
+  document.getElementById('verifyReference').value = prefill.reference || '';
   document.getElementById('manualVerifyResult').innerHTML = '';
 }
 
