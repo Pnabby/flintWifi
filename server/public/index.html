@@ -186,6 +186,7 @@
             transition: all 0.3s ease;
             width: 100%;
             font-size: 1rem;
+            text-decoration: none;
         }
         
         .btn:hover {
@@ -202,6 +203,29 @@
         
         .btn-secondary:hover {
             background: var(--light);
+        }
+
+        .purchase-meta {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.4rem 0.75rem;
+            background: #f5f7ff;
+            border-radius: 999px;
+            font-size: 0.95rem;
+        }
+
+        .purchase-label {
+            color: var(--gray);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-size: 0.7rem;
+        }
+
+        .purchase-value {
+            color: var(--dark);
+            font-weight: 600;
         }
         
         /* Modal Styles */
@@ -230,6 +254,8 @@
             max-width: 500px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             animation: modalFadeIn 0.3s ease;
+            max-height: 90vh;
+            overflow-y: auto;
         }
         
         @keyframes modalFadeIn {
@@ -416,6 +442,16 @@
             <div class="form-group">
                 <label>Password:</label>
                 <p id="displayPassword" style="font-size: 1.2rem; font-weight: 500; padding: 0.8rem; background: #f5f7ff; border-radius: 8px;"></p>
+            </div>
+            <div class="form-group" id="purchaseTimeGroup" style="display: none;">
+                <label>Purchased At:</label>
+                <p id="displayPurchasedAt" style="font-size: 1rem; font-weight: 500; padding: 0.8rem; background: #f5f7ff; border-radius: 8px;"></p>
+            </div>
+            <div id="credentialsLoginActions" style="display: none; text-align: center; margin-top: 1rem;">
+                <a id="credentialsLoginLink" class="btn" href="#" style="width: auto; padding: 0.8rem 2rem;">Login to WiFi</a>
+                <p style="color: var(--gray); font-size: 0.9rem; margin-top: 0.6rem;">
+                    This button only works when you're connected to Flint WiFi.
+                </p>
             </div>
             <p style="color: var(--gray); font-size: 0.9rem; text-align: center; margin-top: 1.5rem;">
                 Tip: Screenshot or copy this information for later use.

@@ -142,7 +142,7 @@ async function getCredentialsForReference(reference) {
 
   const { data: soldLogin, error: soldError } = await supabase
     .from('SoldLogins')
-    .select('username, password')
+    .select('username, password, created_at')
     .eq('username', existingTx.credential_username)
     .maybeSingle();
 
@@ -151,7 +151,8 @@ async function getCredentialsForReference(reference) {
 
   return {
     username: soldLogin.username,
-    password: soldLogin.password
+    password: soldLogin.password,
+    purchasedAt: soldLogin.created_at
   };
 }
 
@@ -259,7 +260,7 @@ app.post('/api/manual-verify', async (req, res) => {
     // 0) Check SoldLogins first (fast path)
     const { data: soldLogin, error: soldError } = await supabase
       .from('SoldLogins')
-      .select('username, password, payment_reference, customer_email')
+      .select('username, password, payment_reference, customer_email, created_at')
       .eq('payment_reference', trimmedReference)
       .eq('customer_email', trimmedEmail)
       .maybeSingle();
@@ -273,7 +274,8 @@ app.post('/api/manual-verify', async (req, res) => {
         credentials: {
           username: soldLogin.username,
           password: soldLogin.password
-        }
+        },
+        purchasedAt: soldLogin.created_at
       });
     }
 
@@ -309,7 +311,8 @@ app.post('/api/manual-verify', async (req, res) => {
         status: 'exists',
         message: "This payment was already processed",
         reference: trimmedReference,
-        credentials: existingCredentials
+        credentials: existingCredentials,
+        purchasedAt: existingCredentials.purchasedAt
       });
     }
 
@@ -345,7 +348,8 @@ app.post('/api/manual-verify', async (req, res) => {
           status: 'exists',
           message: "This payment was already processed",
           reference: trimmedReference,
-          credentials: fallbackCredentials
+          credentials: fallbackCredentials,
+          purchasedAt: fallbackCredentials.purchasedAt
         });
       }
       throw processError;
@@ -358,11 +362,23 @@ app.post('/api/manual-verify', async (req, res) => {
       credentials: credentials?.[0]
     });
 
+    let purchasedAt = null;
+    if (credentials?.[0]?.username) {
+      const { data: soldLoginForTime, error: soldTimeError } = await supabase
+        .from('SoldLogins')
+        .select('created_at')
+        .eq('username', credentials[0].username)
+        .maybeSingle();
+      if (soldTimeError) throw soldTimeError;
+      purchasedAt = soldLoginForTime?.created_at || null;
+    }
+
     return res.json({
       status: 'processed',
       credentials: credentials?.[0],
       reference: trimmedReference,
-      message: "Payment processed successfully"
+      message: "Payment processed successfully",
+      purchasedAt
     });
   } catch (err) {
     console.error('Manual verification error:', err);

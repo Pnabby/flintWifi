@@ -71,6 +71,47 @@ function capitalizeFirstLetter(string) {
   return string.charAt(0).toUpperCase() + string.slice(1);
 }
 
+function buildWifiLoginUrl(username, password) {
+  const loginUrl = new URL('http://wifi.flint.net/login');
+  loginUrl.searchParams.set('u', username);
+  loginUrl.searchParams.set('p', password);
+  return loginUrl.toString();
+}
+
+function formatPurchasedAt(purchasedAt) {
+  if (!purchasedAt) return '';
+  const date = new Date(purchasedAt);
+  if (Number.isNaN(date.getTime())) return purchasedAt;
+  return date.toLocaleString();
+}
+
+function updateCredentialsModal({ username, password, purchasedAt }) {
+  if (!username || !password) return;
+
+  document.getElementById('displayUsername').textContent = username;
+  document.getElementById('displayPassword').textContent = password;
+
+  const purchaseGroup = document.getElementById('purchaseTimeGroup');
+  const purchaseValue = document.getElementById('displayPurchasedAt');
+  const formattedTime = formatPurchasedAt(purchasedAt);
+  if (purchaseGroup && purchaseValue) {
+    if (formattedTime) {
+      purchaseValue.textContent = formattedTime;
+      purchaseGroup.style.display = 'block';
+    } else {
+      purchaseValue.textContent = '';
+      purchaseGroup.style.display = 'none';
+    }
+  }
+
+  const loginActions = document.getElementById('credentialsLoginActions');
+  const loginLink = document.getElementById('credentialsLoginLink');
+  if (loginActions && loginLink) {
+    loginLink.href = buildWifiLoginUrl(username, password);
+    loginActions.style.display = 'block';
+  }
+}
+
 async function manualVerify() {
   const email = prompt("Enter the email you used for payment:");
   if (!email) return;
@@ -95,24 +136,32 @@ async function manualVerify() {
     }
 
     if (result.status === 'exists') {
+      const purchasedAtText = result.purchasedAt
+        ? `<div class="purchase-meta"><span class="purchase-label">Purchased</span><span class="purchase-value">${formatPurchasedAt(result.purchasedAt)}</span></div>`
+        : '';
       resultDiv.innerHTML = `
         <p>Your payment was already processed.</p>
-        <p>Reference: ${result.reference}</p>
+        ${purchasedAtText}
       `;
     } 
     else if (result.status === 'processed') {
+      const purchasedAtText = result.purchasedAt
+        ? `<div class="purchase-meta"><span class="purchase-label">Purchased</span><span class="purchase-value">${formatPurchasedAt(result.purchasedAt)}</span></div>`
+        : '';
+      const loginLink = buildWifiLoginUrl(result.credentials.username, result.credentials.password);
       resultDiv.innerHTML = `
-        <p style="color: var(--success)">✓ Payment verified!</p>
+        <p style="color: var(--success)">Payment verified!</p>
         <p>Username: <strong>${result.credentials.username}</strong></p>
         <p>Password: <strong>${result.credentials.password}</strong></p>
-        <p>Check your email for these details.</p>
+        ${purchasedAtText}
+        <p><a class="btn" href="${loginLink}" style="width: auto; padding: 0.6rem 1.6rem;">Login to WiFi</a></p>
+        <p style="color: var(--gray); font-size: 0.9rem;">This button only works when you're connected to Flint WiFi.</p>
       `;
     }
     else {
       resultDiv.innerHTML = `
         <p>Payment found but not successful yet.</p>
         <p>Status: ${result.message}</p>
-        <p>Reference: ${result.reference}</p>
       `;
     }
   } catch (error) {
@@ -189,22 +238,34 @@ async function submitManualVerify() {
 
     // Show credentials when we have them
     const hasCreds = result.credentials && result.credentials.username && result.credentials.password;
+    const purchasedAtText = result.purchasedAt
+      ? `<div class="purchase-meta"><span class="purchase-label">Purchased</span><span class="purchase-value">${formatPurchasedAt(result.purchasedAt)}</span></div>`
+      : '';
+    const loginMarkup = hasCreds
+      ? `
+        <p><a class="btn" href="${buildWifiLoginUrl(result.credentials.username, result.credentials.password)}" style="width: auto; padding: 0.6rem 1.6rem;">Login to WiFi</a></p>
+        <p style="color: var(--gray); font-size: 0.9rem;">This button only works when you're connected to Flint WiFi.</p>
+      `
+      : '';
 
     if (result.status === 'processed') {
       resultDiv.innerHTML = `
-        <p style="color: var(--success)">✓ Payment verified!</p>
-        <p><strong>Reference:</strong> ${result.reference}</p>
+        <p style="color: var(--success)">Payment verified!</p>
         ${hasCreds ? `
           <p>Username: <strong>${result.credentials.username}</strong></p>
           <p>Password: <strong>${result.credentials.password}</strong></p>
         ` : ''}
-        <p>We also emailed these details to you.</p>
+        ${purchasedAtText}
+        ${loginMarkup}
       `;
 
       // Also pop the nice credentials modal (optional UX)
       if (hasCreds) {
-        document.getElementById('displayUsername').textContent = result.credentials.username;
-        document.getElementById('displayPassword').textContent = result.credentials.password;
+        updateCredentialsModal({
+          username: result.credentials.username,
+          password: result.credentials.password,
+          purchasedAt: result.purchasedAt
+        });
         document.getElementById('credentialsModal').style.display = 'flex';
       }
       return;
@@ -215,29 +276,28 @@ async function submitManualVerify() {
       if (hasCreds) {
         resultDiv.innerHTML = `
           <p>Your payment was already processed.</p>
-          <p><strong>Reference:</strong> ${result.reference}</p>
           <p>Username: <strong>${result.credentials.username}</strong></p>
           <p>Password: <strong>${result.credentials.password}</strong></p>
-          <p>We also emailed these details to you.</p>
+          ${purchasedAtText}
+          ${loginMarkup}
         `;
-        document.getElementById('displayUsername').textContent = result.credentials.username;
-        document.getElementById('displayPassword').textContent = result.credentials.password;
+        updateCredentialsModal({
+          username: result.credentials.username,
+          password: result.credentials.password,
+          purchasedAt: result.purchasedAt
+        });
         document.getElementById('credentialsModal').style.display = 'flex';
       } else {
         resultDiv.innerHTML = `
           <p>Your payment was already processed.</p>
-          <p><strong>Reference:</strong> ${result.reference}</p>
-          <p>Please check your email for the credentials.</p>
         `;
       }
       return;
     }
-
     // Unprocessed / other statuses
     resultDiv.innerHTML = `
       <p>Payment found but not successful yet.</p>
       <p>Status: ${result.message}</p>
-      <p>${result.reference ? `Reference: ${result.reference}` : ''}</p>
     `;
   } catch (error) {
     resultDiv.innerHTML = `
@@ -247,3 +307,7 @@ async function submitManualVerify() {
     console.error("Manual verify failed:", error);
   }
 }
+
+
+
+

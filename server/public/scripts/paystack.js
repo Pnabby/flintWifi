@@ -82,8 +82,16 @@ async function verifyPayment(payload) {
         window.location.href = result.redirectUrl;
       } else if (result.credentials) {
         // show credentials modal as fallback
-        document.getElementById('displayUsername').textContent = result.credentials.username;
-        document.getElementById('displayPassword').textContent = result.credentials.password;
+        if (typeof updateCredentialsModal === 'function') {
+          updateCredentialsModal({
+            username: result.credentials.username,
+            password: result.credentials.password,
+            purchasedAt: result.purchasedAt
+          });
+        } else {
+          document.getElementById('displayUsername').textContent = result.credentials.username;
+          document.getElementById('displayPassword').textContent = result.credentials.password;
+        }
         document.getElementById('credentialsModal').style.display = 'flex';
       }
       return;
